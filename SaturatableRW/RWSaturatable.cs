@@ -10,13 +10,13 @@ namespace SaturatableRW
         /// <summary>
         /// Storable axis momentum = average axis torque * saturationScale
         /// </summary>
-        [KSPField(isPersistant = true, guiActive = true, guiName = "Max Scale")]
+        [KSPField(isPersistant = false)]
         public float saturationScale = 1;
 
         /// <summary>
         /// Rate at which momentum bleeds off as % of max rate of momentum increase
         /// </summary>
-        [KSPField(isPersistant = true, guiActive = true, guiName = "Bleed Rate")]
+        [KSPField(isPersistant = false)]
         public float bleedRate = 1;
 
         /// <summary>
@@ -40,7 +40,6 @@ namespace SaturatableRW
         /// <summary>
         /// Maximum momentum storable on an axis
         /// </summary>
-        [KSPField(guiActive = true)]
         public float saturationLimit;
 
         /// <summary>
@@ -74,31 +73,37 @@ namespace SaturatableRW
         public override void OnStart(StartState state)
         {
             base.OnStart(state);
-        }
-
-        public void Start()
-        {
-            if (!HighLogic.LoadedSceneIsFlight)
-                return;
 
             maxRollTorque = this.RollTorque;
             maxPitchTorque = this.PitchTorque;
             maxYawTorque = this.YawTorque;
 
-            saturationLimit = (float)(averageTorque * saturationScale);
             averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
+            saturationLimit = (float)(averageTorque * saturationScale);
         }
 
         public override string GetInfo()
         {
-            return base.GetInfo();
+            averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
+            string info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms\r\n<b>Bleed Rate:</b> {4:F1}%\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>",
+                                        PitchTorque, YawTorque, RollTorque, saturationScale * averageTorque, bleedRate);
+
+            foreach (ModuleResource res in this.inputResources)
+            {
+                if (res.rate <= 1)
+                    info += string.Format("\r\n - <b>{0}:</b> {1:F1} /min", res.name, res.rate * 60);
+                else
+                    info += string.Format("\r\n - <b>{0}:</b> {1:F1} /s", res.name, res.rate);
+            }
+            return info;
             //the string to be shown in the editor module window?
         }
 
         public override void OnFixedUpdate()
         {
             base.OnFixedUpdate();
-
+            print(base.GetInfo());
+            print(GetInfo());
             if (!HighLogic.LoadedSceneIsFlight || this.State != WheelState.Active)
                 return;
 
