@@ -79,14 +79,15 @@ namespace SaturatableRW
             maxYawTorque = this.YawTorque;
 
             averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
-            saturationLimit = (float)(averageTorque * saturationScale);
+            saturationLimit = averageTorque * saturationScale;
         }
 
         public override string GetInfo()
         {
             averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
+            saturationLimit = averageTorque * saturationScale;
             string info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms\r\n<b>Bleed Rate:</b> {4:F1}%\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>",
-                                        PitchTorque, YawTorque, RollTorque, saturationScale * averageTorque, bleedRate);
+                                        PitchTorque, YawTorque, RollTorque, saturationLimit, bleedRate);
 
             foreach (ModuleResource res in this.inputResources)
             {
@@ -106,9 +107,7 @@ namespace SaturatableRW
             print(GetInfo());
             if (!HighLogic.LoadedSceneIsFlight || this.State != WheelState.Active)
                 return;
-
-            // update saturation limit for changes in scale
-            saturationLimit = (float)(averageTorque * saturationScale);
+            
             // update stored momentum
             updateMomentum();
             // update module torque outputs
