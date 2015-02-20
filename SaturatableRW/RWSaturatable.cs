@@ -70,8 +70,25 @@ namespace SaturatableRW
         [KSPField(guiActive = true, guiFormat = "F1")]
         float availableYawTorque;
 
+        /// <summary>
+        /// Torque available dependent on % saturation
+        /// </summary>
+        [KSPField]
+        FloatCurve torqueCurve = new FloatCurve();
+
+        public override void OnAwake()
+        {
+            if (HighLogic.LoadedSceneIsFlight)
+                this.part.force_activate();
+            base.OnAwake();
+        }
+
         public override void OnStart(StartState state)
         {
+            base.OnStart(state);
+            if (!HighLogic.LoadedSceneIsFlight)
+                return;
+
             base.OnStart(state);
 
             maxRollTorque = this.RollTorque;
@@ -99,14 +116,13 @@ namespace SaturatableRW
             //the string to be shown in the editor module window?
         }
 
-        public override void OnFixedUpdate()
+        public void FixedUpdate()
         {
             base.OnFixedUpdate();
-            print(base.GetInfo());
-            print(GetInfo());
-            if (!HighLogic.LoadedSceneIsFlight || this.State != WheelState.Active)
+            
+            if (!HighLogic.LoadedSceneIsFlight || this.vessel != FlightGlobals.ActiveVessel || this.State != WheelState.Active)
                 return;
-
+            
             // update saturation limit for changes in scale
             saturationLimit = (float)(averageTorque * saturationScale);
             // update stored momentum
@@ -135,11 +151,6 @@ namespace SaturatableRW
             x_Moment = decayMoment(x_Moment);
             y_Moment = decayMoment(y_Moment);
             z_Moment = decayMoment(z_Moment);
-
-            // clamp momentum storage (this shouldn't be required, probably need to use available torque for inputs)
-            x_Moment = Math.Max(Math.Min(x_Moment, saturationLimit), -saturationLimit);
-            y_Moment = Math.Max(Math.Min(y_Moment, saturationLimit), -saturationLimit);
-            z_Moment = Math.Max(Math.Min(z_Moment, saturationLimit), -saturationLimit);
         }
 
         private void updateTorque()
@@ -181,10 +192,15 @@ namespace SaturatableRW
 
         private float calcAvailableTorque(Vector3 refAxis, float maxAxisTorque)
         {
-            Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * (saturationLimit - Math.Abs(x_Moment)) / saturationLimit
-                                , Vector3.Dot(refAxis, Planetarium.up) * (saturationLimit - Math.Abs(y_Moment)) / saturationLimit
-                                , Vector3.Dot(refAxis, Planetarium.right) * (saturationLimit - Math.Abs(z_Moment)) / saturationLimit);
+            Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctSaturation(saturationLimit, x_Moment))
+                                            , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctSaturation(saturationLimit, y_Moment))
+                                            , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctSaturation(saturationLimit, z_Moment)));
             return (float)Math.Abs(maxAxisTorque * torqueVec.magnitude);
+        }
+
+        private float pctSaturation(float limit, float current)
+        {
+            return 1 - Math.Abs(current) / limit;
         }
     }
 }
