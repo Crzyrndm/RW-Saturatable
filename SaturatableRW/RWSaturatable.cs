@@ -74,13 +74,16 @@ namespace SaturatableRW
         /// Torque available dependent on % saturation
         /// </summary>
         [KSPField]
-        FloatCurve torqueCurve = new FloatCurve();
+        FloatCurve torqueCurve;
 
         public override void OnAwake()
         {
-            if (HighLogic.LoadedSceneIsFlight)
-                this.part.force_activate();
             base.OnAwake();
+
+            this.part.force_activate();
+
+            if (torqueCurve == null)
+                torqueCurve = new FloatCurve();
         }
 
         public override void OnStart(StartState state)
@@ -89,7 +92,7 @@ namespace SaturatableRW
             if (!HighLogic.LoadedSceneIsFlight)
                 return;
 
-            base.OnStart(state);
+            this.part.force_activate();
 
             maxRollTorque = this.RollTorque;
             maxPitchTorque = this.PitchTorque;
@@ -98,8 +101,8 @@ namespace SaturatableRW
             averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
             saturationLimit = averageTorque * saturationScale;
 
-            torqueCurve.Add(0, 0);
-            torqueCurve.Add(1, 1);
+            //torqueCurve.Add(0, 0);
+            //torqueCurve.Add(1, 1);
         }
 
         public override string GetInfo()
@@ -117,16 +120,15 @@ namespace SaturatableRW
                     info += string.Format("\r\n - <b>{0}:</b> {1:F1} /s", res.name, res.rate);
             }
             return info;
-            //the string to be shown in the editor module window?
         }
 
         public override void OnFixedUpdate()
         {
             base.OnFixedUpdate();
-            
+
             if (!HighLogic.LoadedSceneIsFlight || this.vessel != FlightGlobals.ActiveVessel || this.State != WheelState.Active)
                 return;
-            
+
             // update stored momentum
             updateMomentum();
             // update module torque outputs
