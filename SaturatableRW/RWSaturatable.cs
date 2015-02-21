@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections;
 using System.Linq;
 using UnityEngine;
 
@@ -12,12 +13,6 @@ namespace SaturatableRW
         /// </summary>
         [KSPField]
         public float saturationScale = 1;
-
-        /// <summary>
-        /// Rate at which momentum bleeds off as % of max rate of momentum increase
-        /// </summary>
-        [KSPField]
-        public float bleedRate = 1;
 
         /// <summary>
         /// Current stored momentum on X axis
@@ -74,25 +69,36 @@ namespace SaturatableRW
         /// Torque available dependent on % saturation
         /// </summary>
         [KSPField]
-        FloatCurve torqueCurve;
+        public FloatCurve torqueCurve;
+
+        /// <summary>
+        /// Bleed Rate dependent on % saturation
+        /// </summary>
+        [KSPField]
+        public FloatCurve bleedRate;
 
         public override void OnAwake()
         {
+            print("awake");
             base.OnAwake();
-
+            print("base.Awake");
             this.part.force_activate();
 
             if (torqueCurve == null)
                 torqueCurve = new FloatCurve();
+
+            if (bleedRate == null)
+                bleedRate = new FloatCurve();
         }
 
         public override void OnStart(StartState state)
         {
+            print("start");
             base.OnStart(state);
+            print("base.Start");
+
             if (!HighLogic.LoadedSceneIsFlight)
                 return;
-
-            this.part.force_activate();
 
             maxRollTorque = this.RollTorque;
             maxPitchTorque = this.PitchTorque;
@@ -101,16 +107,24 @@ namespace SaturatableRW
             averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
             saturationLimit = averageTorque * saturationScale;
 
-            //torqueCurve.Add(0, 0);
-            //torqueCurve.Add(1, 1);
+            print("0% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 0)));
+            print("25% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 0.25f)));
+            print("50% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 0.5f)));
+            print("75% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 0.75f)));
+            print("100% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 1)));
+
+            StartCoroutine(loggingRoutine());
         }
 
         public override string GetInfo()
         {
             averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
             saturationLimit = averageTorque * saturationScale;
-            string info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms\r\n<b>Bleed Rate:</b> {4:F1}%\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>",
-                                        PitchTorque, YawTorque, RollTorque, saturationLimit, bleedRate);
+
+            float min, max;
+            bleedRate.FindMinMaxValue(out min, out max);
+            string info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms\r\n<b>Bleed Rate\r\n\tMin: </b> {4:F1}%\r\n\t<b>Max:</b> {5:F1} %\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>",
+                                        PitchTorque, YawTorque, RollTorque, saturationLimit, min * 100, max * 100);
 
             foreach (ModuleResource res in this.inputResources)
             {
@@ -126,7 +140,7 @@ namespace SaturatableRW
         {
             base.OnFixedUpdate();
 
-            if (!HighLogic.LoadedSceneIsFlight || this.vessel != FlightGlobals.ActiveVessel || this.State != WheelState.Active)
+            if (!HighLogic.LoadedSceneIsFlight || this.vessel != FlightGlobals.ActiveVessel)
                 return;
 
             // update stored momentum
@@ -138,18 +152,21 @@ namespace SaturatableRW
         private void updateMomentum()
         {
             // input torque scale. Available torque gives exponential decay and will always have some torque available (should asymptotically approach bleed rate)
-            float rollInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.roll * availableRollTorque;
-            float pitchInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.pitch * availablePitchTorque;
-            float yawInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.yaw * availableYawTorque;
+            if (this.State == WheelState.Active)
+            {
+                float rollInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.roll * availableRollTorque;
+                float pitchInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.pitch * availablePitchTorque;
+                float yawInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.yaw * availableYawTorque;
 
-            // increase momentum stored according to relevant inputs
-            // transform is based on the vessel not the part. 0 Pitch torque gives no pitch response for any part orientation
-            // roll == up vector
-            // yaw == forward vector
-            // pitch == right vector
-            inputMoment(this.vessel.transform.up, rollInput);
-            inputMoment(this.vessel.transform.right, pitchInput);
-            inputMoment(this.vessel.transform.forward, yawInput);
+                // increase momentum stored according to relevant inputs
+                // transform is based on the vessel not the part. 0 Pitch torque gives no pitch response for any part orientation
+                // roll == up vector
+                // yaw == forward vector
+                // pitch == right vector
+                inputMoment(this.vessel.transform.up, rollInput);
+                inputMoment(this.vessel.transform.right, pitchInput);
+                inputMoment(this.vessel.transform.forward, yawInput);
+            }
 
             // reduce momentum stored by decay factor
             x_Moment = decayMoment(x_Moment);
@@ -187,9 +204,9 @@ namespace SaturatableRW
         {
             // normalise stored momentum towards zero by a percentage of maximum torque
             if (moment > 0)
-                return moment - Mathf.Min(averageTorque * (bleedRate / 100) * TimeWarp.fixedDeltaTime, moment);
+                return moment - Mathf.Min(averageTorque * bleedRate.Evaluate(pctSaturation(moment, saturationLimit)) * TimeWarp.fixedDeltaTime, moment);
             else if (moment < 0)
-                return moment + Mathf.Max(averageTorque * (bleedRate / 100) * TimeWarp.fixedDeltaTime, moment);
+                return moment + Mathf.Max(averageTorque * bleedRate.Evaluate(pctSaturation(moment, saturationLimit)) * TimeWarp.fixedDeltaTime, moment);
             else
                 return 0;
         }
@@ -197,9 +214,9 @@ namespace SaturatableRW
         private float calcAvailableTorque(Vector3 refAxis, float maxAxisTorque)
         {
             // calculate the torque available from each control axis depending on it's alignment
-            Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctToSaturation(saturationLimit, x_Moment))
-                                            , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctToSaturation(saturationLimit, y_Moment))
-                                            , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctToSaturation(saturationLimit, z_Moment)));
+            Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctSaturation(saturationLimit, x_Moment))
+                                            , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctSaturation(saturationLimit, y_Moment))
+                                            , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctSaturation(saturationLimit, z_Moment)));
 
             return Mathf.Abs(maxAxisTorque * torqueVec.magnitude);
         }
@@ -207,9 +224,21 @@ namespace SaturatableRW
         /// <summary>
         /// The percentage of momentum before this axis is completely saturated
         /// </summary>
-        private float pctToSaturation(float limit, float current)
+        private float pctSaturation(float limit, float current)
         {
-            return 1 - Mathf.Abs(current) / limit;
+            return Mathf.Abs(current) / limit;
+        }
+
+        IEnumerator loggingRoutine()
+        {
+            while (HighLogic.LoadedSceneIsFlight)
+            {
+                yield return new WaitForSeconds(1);
+                Debug.Log(string.Format("Saturation Limit: {0}\r\nMomentume X: {1}\r\nMomentum Y: {2}\r\nMomentum Z: {3}\r\nMax Roll Torque: {4}\r\nMax Pitch Torque: {5}"
+                    + "\r\nMax Yaw Torque: {6}\r\nAvailable Roll Torque: {7}\r\nAvailable Pitch Torque: {8}\r\nAvailable Yaw Torque: {9}\r\nWheel State: {10}"
+                    , saturationLimit.ToString(), x_Moment.ToString(), y_Moment.ToString(), z_Moment.ToString(), maxRollTorque.ToString(), maxPitchTorque.ToString()
+                    , maxYawTorque.ToString(), availableRollTorque.ToString(), availablePitchTorque.ToString(), availableYawTorque.ToString(), this.wheelState.ToString()));
+            }
         }
     }
 }
