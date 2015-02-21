@@ -10,13 +10,13 @@ namespace SaturatableRW
         /// <summary>
         /// Storable axis momentum = average axis torque * saturationScale
         /// </summary>
-        [KSPField(isPersistant = false)]
+        [KSPField]
         public float saturationScale = 1;
 
         /// <summary>
         /// Rate at which momentum bleeds off as % of max rate of momentum increase
         /// </summary>
-        [KSPField(isPersistant = false)]
+        [KSPField]
         public float bleedRate = 1;
 
         /// <summary>
@@ -40,14 +40,14 @@ namespace SaturatableRW
         /// <summary>
         /// Maximum momentum storable on an axis
         /// </summary>
-        public float saturationLimit;
+        float saturationLimit;
 
         /// <summary>
         /// Average torque over each axis (quick hack to make calculating the limit easy)
         /// </summary>
         float averageTorque;
 
-        // Storing module torque since this overrides it to take effect
+        // Storing module torque since this module overrides the base values to take effect
         float maxRollTorque;
         float maxPitchTorque;
         float maxYawTorque;
@@ -97,6 +97,9 @@ namespace SaturatableRW
 
             averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
             saturationLimit = averageTorque * saturationScale;
+
+            torqueCurve.Add(0, 0);
+            torqueCurve.Add(1, 1);
         }
 
         public override string GetInfo()
@@ -146,7 +149,7 @@ namespace SaturatableRW
             inputMoment(this.vessel.transform.right, pitchInput);
             inputMoment(this.vessel.transform.forward, yawInput);
 
-            // reduce momentum sotred by decay facto
+            // reduce momentum stored by decay factor
             x_Moment = decayMoment(x_Moment);
             y_Moment = decayMoment(y_Moment);
             z_Moment = decayMoment(z_Moment);
@@ -170,12 +173,12 @@ namespace SaturatableRW
             this.YawTorque = availableYawTorque;
         }
 
-        private void inputMoment(Vector3d vesselAxis, float input)
+        private void inputMoment(Vector3 vesselAxis, float input)
         {
             // increase momentum storage according to axis alignment
-            x_Moment += (float)(Vector3d.Dot(vesselAxis, Planetarium.forward) * input);
-            y_Moment += (float)(Vector3d.Dot(vesselAxis, Planetarium.up) * input);
-            z_Moment += (float)(Vector3d.Dot(vesselAxis, Planetarium.right) * input);
+            x_Moment += Vector3.Dot(vesselAxis, Planetarium.forward) * input;
+            y_Moment += Vector3.Dot(vesselAxis, Planetarium.up) * input;
+            z_Moment += Vector3.Dot(vesselAxis, Planetarium.right) * input;
         }
 
         private float decayMoment(float moment)
@@ -191,15 +194,20 @@ namespace SaturatableRW
 
         private float calcAvailableTorque(Vector3 refAxis, float maxAxisTorque)
         {
+            // calculate the torque available from each control axis depending on it's alignment
             Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctToSaturation(saturationLimit, x_Moment))
                                             , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctToSaturation(saturationLimit, y_Moment))
                                             , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctToSaturation(saturationLimit, z_Moment)));
-            return (float)Math.Abs(maxAxisTorque * torqueVec.magnitude);
+
+            return Mathf.Abs(maxAxisTorque * torqueVec.magnitude);
         }
 
+        /// <summary>
+        /// The percentage of momentum before this axis is completely saturated
+        /// </summary>
         private float pctToSaturation(float limit, float current)
         {
-            return 1 - Math.Abs(current) / limit;
+            return 1 - Mathf.Abs(current) / limit;
         }
     }
 }
