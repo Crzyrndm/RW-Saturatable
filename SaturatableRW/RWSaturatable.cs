@@ -117,18 +117,13 @@ namespace SaturatableRW
             //the string to be shown in the editor module window?
         }
 
-        public void FixedUpdate()
+        public override void OnFixedUpdate()
         {
             base.OnFixedUpdate();
             
             if (!HighLogic.LoadedSceneIsFlight || this.vessel != FlightGlobals.ActiveVessel || this.State != WheelState.Active)
                 return;
             
-<<<<<<< HEAD
-            // update saturation limit for changes in scale
-            saturationLimit = (float)(averageTorque * saturationScale);
-=======
->>>>>>> origin/master
             // update stored momentum
             updateMomentum();
             // update module torque outputs
@@ -196,13 +191,13 @@ namespace SaturatableRW
 
         private float calcAvailableTorque(Vector3 refAxis, float maxAxisTorque)
         {
-            Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctSaturation(saturationLimit, x_Moment))
-                                            , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctSaturation(saturationLimit, y_Moment))
-                                            , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctSaturation(saturationLimit, z_Moment)));
+            Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctToSaturation(saturationLimit, x_Moment))
+                                            , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctToSaturation(saturationLimit, y_Moment))
+                                            , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctToSaturation(saturationLimit, z_Moment)));
             return (float)Math.Abs(maxAxisTorque * torqueVec.magnitude);
         }
 
-        private float pctSaturation(float limit, float current)
+        private float pctToSaturation(float limit, float current)
         {
             return 1 - Math.Abs(current) / limit;
         }
