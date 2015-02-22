@@ -89,13 +89,6 @@ namespace SaturatableRW
 
             if (bleedRate == null)
                 bleedRate = new FloatCurve();
-        }
-
-        public override void OnStart(StartState state)
-        {
-            print("start");
-            base.OnStart(state);
-            print("base.Start");
 
             if (!HighLogic.LoadedSceneIsFlight)
                 return;
@@ -107,13 +100,18 @@ namespace SaturatableRW
             averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
             saturationLimit = averageTorque * saturationScale;
 
-            print("0% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 0)));
-            print("25% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 0.25f)));
-            print("50% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 0.5f)));
-            print("75% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 0.75f)));
+            print("0% saturation: " + torqueCurve.Evaluate(pctSaturation(0, 1)));
+            print("25% saturation: " + torqueCurve.Evaluate(pctSaturation(0.25f, 1)));
+            print("50% saturation: " + torqueCurve.Evaluate(pctSaturation(0.5f, 1)));
+            print("75% saturation: " + torqueCurve.Evaluate(pctSaturation(0.75f, 1)));
             print("100% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 1)));
 
             StartCoroutine(loggingRoutine());
+        }
+
+        public override void OnStart(StartState state)
+        {
+            base.OnStart(state);
         }
 
         public override string GetInfo()
@@ -169,9 +167,9 @@ namespace SaturatableRW
             }
 
             // reduce momentum stored by decay factor
-            x_Moment = decayMoment(x_Moment);
-            y_Moment = decayMoment(y_Moment);
-            z_Moment = decayMoment(z_Moment);
+            //x_Moment = decayMoment(x_Moment, Planetarium.forward);
+            //y_Moment = decayMoment(y_Moment, Planetarium.up);
+            //z_Moment = decayMoment(z_Moment, Planetarium.right);
         }
 
         private void updateTorque()
@@ -200,13 +198,18 @@ namespace SaturatableRW
             z_Moment += Vector3.Dot(vesselAxis, Planetarium.right) * input;
         }
 
-        private float decayMoment(float moment)
+        private float decayMoment(float moment, Vector3 refAxis)
         {
-            // normalise stored momentum towards zero by a percentage of maximum torque
+            // normalise stored momentum towards zero by a percentage of maximum torque that would be applied on that axis
+            Vector3 torqueAlignment = new Vector3(maxYawTorque, maxRollTorque, maxPitchTorque);
+
+
+            float decayVal = Mathf.Clamp(averageTorque * TimeWarp.fixedDeltaTime * bleedRate.Evaluate(pctSaturation(moment, saturationLimit)), 0, moment);
+            
             if (moment > 0)
-                return moment - Mathf.Min(averageTorque * bleedRate.Evaluate(pctSaturation(moment, saturationLimit)) * TimeWarp.fixedDeltaTime, moment);
+                return moment - decayVal;
             else if (moment < 0)
-                return moment + Mathf.Max(averageTorque * bleedRate.Evaluate(pctSaturation(moment, saturationLimit)) * TimeWarp.fixedDeltaTime, moment);
+                return moment + decayVal;
             else
                 return 0;
         }
@@ -214,19 +217,19 @@ namespace SaturatableRW
         private float calcAvailableTorque(Vector3 refAxis, float maxAxisTorque)
         {
             // calculate the torque available from each control axis depending on it's alignment
-            Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctSaturation(saturationLimit, x_Moment))
-                                            , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctSaturation(saturationLimit, y_Moment))
-                                            , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctSaturation(saturationLimit, z_Moment)));
+            Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctSaturation(x_Moment, saturationLimit))
+                                            , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctSaturation(y_Moment, saturationLimit))
+                                            , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctSaturation(z_Moment, saturationLimit)));
 
             return Mathf.Abs(maxAxisTorque * torqueVec.magnitude);
         }
 
-        /// <summary>
-        /// The percentage of momentum before this axis is completely saturated
-        /// </summary>
-        private float pctSaturation(float limit, float current)
+        private float pctSaturation(float current, float limit)
         {
-            return Mathf.Abs(current) / limit;
+            if (limit != 0)
+                return Mathf.Abs(current) / limit;
+            else
+                return 0;
         }
 
         IEnumerator loggingRoutine()
