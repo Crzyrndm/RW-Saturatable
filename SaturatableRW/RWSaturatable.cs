@@ -91,26 +91,25 @@ namespace SaturatableRW
         public override void OnStart(StartState state)
         {
             base.OnStart(state);
-            if (!HighLogic.LoadedSceneIsFlight)
-                return;
+            if (HighLogic.LoadedSceneIsFlight)
+            {
+                this.part.force_activate();
 
-            this.part.force_activate();
+                maxRollTorque = this.RollTorque;
+                maxPitchTorque = this.PitchTorque;
+                maxYawTorque = this.YawTorque;
 
-            maxRollTorque = this.RollTorque;
-            maxPitchTorque = this.PitchTorque;
-            maxYawTorque = this.YawTorque;
+                averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
+                saturationLimit = averageTorque * saturationScale;
 
-            averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
-            saturationLimit = averageTorque * saturationScale;
+                print("0% saturation: " + torqueCurve.Evaluate(pctSaturation(0f, 1)));
+                print("25% saturation: " + torqueCurve.Evaluate(pctSaturation(0.25f, 1)));
+                print("50% saturation: " + torqueCurve.Evaluate(pctSaturation(0.5f, 1)));
+                print("75% saturation: " + torqueCurve.Evaluate(pctSaturation(0.75f, 1)));
+                print("100% saturation: " + torqueCurve.Evaluate(pctSaturation(1f, 1)));
 
-            print("0% saturation: " + torqueCurve.Evaluate(pctSaturation(0, 1)));
-            print("25% saturation: " + torqueCurve.Evaluate(pctSaturation(0.25f, 1)));
-            print("50% saturation: " + torqueCurve.Evaluate(pctSaturation(0.5f, 1)));
-            print("75% saturation: " + torqueCurve.Evaluate(pctSaturation(0.75f, 1)));
-            print("100% saturation: " + torqueCurve.Evaluate(pctSaturation(1, 1)));
-
-            StartCoroutine(loggingRoutine());
-
+                StartCoroutine(loggingRoutine());
+            }
         }
 
         public override string GetInfo()
@@ -133,8 +132,11 @@ namespace SaturatableRW
         public override void OnFixedUpdate()
         {
             base.OnFixedUpdate();
-
-            if (!HighLogic.LoadedSceneIsFlight || this.vessel != FlightGlobals.ActiveVessel || this.State != WheelState.Active)
+            
+            if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready)
+                return;
+            
+            if (this.State != WheelState.Active)
                 return;
 
             // update stored momentum
@@ -186,9 +188,11 @@ namespace SaturatableRW
         private void inputMoment(Vector3 vesselAxis, float input)
         {
             // increase momentum storage according to axis alignment
-            x_Moment += Vector3.Dot(vesselAxis, Planetarium.forward) * input;
-            y_Moment += Vector3.Dot(vesselAxis, Planetarium.up) * input;
-            z_Moment += Vector3.Dot(vesselAxis, Planetarium.right) * input;
+            Vector3 scaledAxis = vesselAxis * input;
+
+            x_Moment += Vector3.Dot(scaledAxis, Planetarium.forward);
+            y_Moment += Vector3.Dot(scaledAxis, Planetarium.up);
+            z_Moment += Vector3.Dot(scaledAxis, Planetarium.right);
         }
 
         private float decayMoment(float moment)
@@ -196,21 +200,42 @@ namespace SaturatableRW
             // normalise stored momentum towards zero by a percentage of maximum torque that would be applied on that axis
 
             if (moment > 0)
-                return moment - Mathf.Min(averageTorque * (bleedRate.Evaluate(pctSaturation(saturationLimit, moment))) * TimeWarp.fixedDeltaTime, moment);
+                return moment - Mathf.Min(averageTorque * (bleedRate.Evaluate(pctSaturation(moment, saturationLimit))) * TimeWarp.fixedDeltaTime, moment);
             else if (moment < 0)
-                return moment + Mathf.Max(averageTorque * (bleedRate.Evaluate(pctSaturation(saturationLimit, moment))) * TimeWarp.fixedDeltaTime, moment);
+                return moment + Mathf.Max(averageTorque * (bleedRate.Evaluate(pctSaturation(moment, saturationLimit))) * TimeWarp.fixedDeltaTime, moment);
             else
                 return 0;
         }
 
         private float calcAvailableTorque(Vector3 refAxis, float maxAxisTorque)
         {
+            // this calculation is flawed, it does not account for the need to retain balance between all three axes applying torque and instead
+            // just requests a proportion from each no matter if the others can actually supply enough to balance that. It should be a vector that is
+            // scaled to the axis that limits it most
+            //////////////////////////////////////////////////////////////////////////////////////////////////
             // calculate the torque available from each control axis depending on it's alignment
-            Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctSaturation(saturationLimit, x_Moment))
-                                            , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctSaturation(saturationLimit, y_Moment))
-                                            , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctSaturation(saturationLimit, z_Moment)));
+            //Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctSaturation(x_Moment, saturationLimit))
+            //                                , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctSaturation(y_Moment, saturationLimit))
+            //                                , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctSaturation(z_Moment, saturationLimit)));
+            //////////////////////////////////////////////////////////////////////////////////////////////////
+            // corrected calculation (hopefully)
+            // this is probably not the easiest way to do this
+            // 1) calc the torque available to a world space axis
+            // 1a) I'm going to simplify this for the time being and assume that all axes have the same torque value
+            // 2) project a torque unit vector onto each world space axis
+            // 3) take the inverse of the largest ratio of 2) on 3) and scale the unit vector by that amount (inverse because this way can set any divide by 0 to zero)
+            Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward), Vector3.Dot(refAxis, Planetarium.up), Vector3.Dot(refAxis, Planetarium.right));
+            
+            // Smallest ratio is the scaling factor
+            float ratiox = 1000000, ratioy = 1000000, ratioz = 1000000;
+            if (torqueVec.x != 0)
+                ratiox = Mathf.Abs(torqueCurve.Evaluate(pctSaturation(x_Moment, saturationLimit)) / torqueVec.x);
+            if (torqueVec.y != 0)
+                ratioy = Mathf.Abs(torqueCurve.Evaluate(pctSaturation(y_Moment, saturationLimit)) / torqueVec.y);
+            if (torqueVec.z != 0)
+                ratioz = Mathf.Abs(torqueCurve.Evaluate(pctSaturation(z_Moment, saturationLimit)) / torqueVec.z);
 
-            return Mathf.Abs(maxAxisTorque * torqueVec.magnitude);
+            return torqueVec.magnitude * Mathf.Min(ratiox, ratioy, ratioz, 1) * maxAxisTorque;
         }
 
         IEnumerator loggingRoutine()
@@ -228,9 +253,12 @@ namespace SaturatableRW
         /// <summary>
         /// The percentage of momentum before this axis is completely saturated
         /// </summary>
-        private float pctSaturation(float limit, float current)
+        private float pctSaturation(float current, float limit)
         {
-            return Mathf.Abs(current) / limit;
+            if (limit != 0)
+                return Mathf.Abs(current) / limit;
+            else
+                return 0;
         }
     }
 }
