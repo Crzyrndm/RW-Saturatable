@@ -116,9 +116,18 @@ namespace SaturatableRW
         {
             averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
             saturationLimit = averageTorque * saturationScale;
-            string info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms\r\n<b>Bleed Rate:</b> {4:F1}%\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>",
-                                        PitchTorque, YawTorque, RollTorque, saturationLimit, bleedRate);
-
+            float min, max;
+            bleedRate.FindMinMaxValue(out min, out max);
+            // Base info
+            string info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms",
+                                        PitchTorque, YawTorque, RollTorque, saturationLimit);
+            // display min/max if there is a difference, otherwise just one value
+            if (min == max)
+                info += string.Format("\r\n<b>Bleed Rate:</b> {0:F1}%", max * 100);
+            else
+                info += string.Format("\r\n<b>Bleed Rate:\r\n\tMin:</b> {0:F1}%\r\n\t<b>Max:</b> {1:F1}%", min * 100, max * 100);
+            // resource consumption
+            info += "\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>";
             foreach (ModuleResource res in this.inputResources)
             {
                 if (res.rate <= 1)
@@ -223,7 +232,7 @@ namespace SaturatableRW
             // 1) calc the torque available to a world space axis
             // 1a) I'm going to simplify this for the time being and assume that all axes have the same torque value
             // 2) project a torque unit vector onto each world space axis
-            // 3) take the inverse of the largest ratio of 2) on 3) and scale the unit vector by that amount (inverse because this way can set any divide by 0 to zero)
+            // 3) take the smallest ratio of 2) on 1) and scale the unit vector by that amount
             Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward), Vector3.Dot(refAxis, Planetarium.up), Vector3.Dot(refAxis, Planetarium.right));
             
             // Smallest ratio is the scaling factor
@@ -238,6 +247,17 @@ namespace SaturatableRW
             return torqueVec.magnitude * Mathf.Min(ratiox, ratioy, ratioz, 1) * maxAxisTorque;
         }
 
+        /// <summary>
+        /// The percentage of momentum before this axis is completely saturated
+        /// </summary>
+        private float pctSaturation(float current, float limit)
+        {
+            if (limit != 0)
+                return Mathf.Abs(current) / limit;
+            else
+                return 0;
+        }
+
         IEnumerator loggingRoutine()
         {
             while (HighLogic.LoadedSceneIsFlight)
@@ -248,17 +268,6 @@ namespace SaturatableRW
                     , saturationLimit.ToString(), x_Moment.ToString(), y_Moment.ToString(), z_Moment.ToString(), maxRollTorque.ToString(), maxPitchTorque.ToString()
                     , maxYawTorque.ToString(), availableRollTorque.ToString(), availablePitchTorque.ToString(), availableYawTorque.ToString(), this.wheelState.ToString()));
             }
-        }
-
-        /// <summary>
-        /// The percentage of momentum before this axis is completely saturated
-        /// </summary>
-        private float pctSaturation(float current, float limit)
-        {
-            if (limit != 0)
-                return Mathf.Abs(current) / limit;
-            else
-                return 0;
         }
     }
 }
