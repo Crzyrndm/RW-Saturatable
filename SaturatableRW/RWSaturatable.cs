@@ -74,6 +74,8 @@ namespace SaturatableRW
         [KSPField]
         public FloatCurve bleedRate;
 
+        static KSP.IO.PluginConfiguration config;
+
         public override void OnAwake()
         {
             base.OnAwake();
@@ -85,7 +87,6 @@ namespace SaturatableRW
 
             if (bleedRate == null)
                 bleedRate = new FloatCurve();
-
         }
 
         public override void OnStart(StartState state)
@@ -107,8 +108,17 @@ namespace SaturatableRW
                 print("50% saturation: " + torqueCurve.Evaluate(pctSaturation(0.5f, 1)));
                 print("75% saturation: " + torqueCurve.Evaluate(pctSaturation(0.75f, 1)));
                 print("100% saturation: " + torqueCurve.Evaluate(pctSaturation(1f, 1)));
-
-                StartCoroutine(loggingRoutine());
+                
+                ////////////////////////////////////////////////////////////////////////////
+                /// logging worker /////////////////////////////////////////////////////////
+                if (config == null)
+                    config = KSP.IO.PluginConfiguration.CreateForType<RWSaturatable>();
+                config.load();
+                if (config.GetValue("LogDump", false))
+                    StartCoroutine(loggingRoutine());
+                // save the file so it can be activated by anyone
+                config["LogDump"] = config.GetValue("LogDump", false);
+                config.save();
             }
         }
 
@@ -171,9 +181,9 @@ namespace SaturatableRW
             inputMoment(this.vessel.transform.forward, yawInput);
 
             // reduce momentum stored by decay factor
-            x_Moment = decayMoment(x_Moment);
-            y_Moment = decayMoment(y_Moment);
-            z_Moment = decayMoment(z_Moment);
+            x_Moment = decayMoment(x_Moment, Planetarium.forward);
+            y_Moment = decayMoment(y_Moment, Planetarium.up);
+            z_Moment = decayMoment(z_Moment, Planetarium.right);
         }
 
         private void updateTorque()
@@ -204,14 +214,17 @@ namespace SaturatableRW
             z_Moment += Vector3.Dot(scaledAxis, Planetarium.right);
         }
 
-        private float decayMoment(float moment)
+        private float decayMoment(float moment, Vector3 refAxis)
         {
             // normalise stored momentum towards zero by a percentage of maximum torque that would be applied on that axis
-
+            float torqueMag = new Vector3(Vector3.Dot(this.vessel.transform.right, refAxis) * this.PitchTorque
+                                    , Vector3.Dot(this.vessel.transform.forward, refAxis) * this.YawTorque
+                                    , Vector3.Dot(this.vessel.transform.up, refAxis) * this.RollTorque).magnitude;
+            
             if (moment > 0)
-                return moment - Mathf.Min(averageTorque * (bleedRate.Evaluate(pctSaturation(moment, saturationLimit))) * TimeWarp.fixedDeltaTime, moment);
+                return moment - Mathf.Min(torqueMag * (bleedRate.Evaluate(pctSaturation(moment, saturationLimit))) * TimeWarp.fixedDeltaTime, moment);
             else if (moment < 0)
-                return moment + Mathf.Max(averageTorque * (bleedRate.Evaluate(pctSaturation(moment, saturationLimit))) * TimeWarp.fixedDeltaTime, moment);
+                return moment + Mathf.Max(torqueMag * (bleedRate.Evaluate(pctSaturation(moment, saturationLimit))) * TimeWarp.fixedDeltaTime, moment);
             else
                 return 0;
         }
@@ -227,7 +240,7 @@ namespace SaturatableRW
             //                                , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctSaturation(y_Moment, saturationLimit))
             //                                , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctSaturation(z_Moment, saturationLimit)));
             //////////////////////////////////////////////////////////////////////////////////////////////////
-            // corrected calculation (hopefully)
+            // more correct calculation (hopefully)
             // this is probably not the easiest way to do this
             // 1) calc the torque available to a world space axis
             // 1a) I'm going to simplify this for the time being and assume that all axes have the same torque value
@@ -258,6 +271,10 @@ namespace SaturatableRW
                 return 0;
         }
 
+        /// <summary>
+        /// runs once per second while in the flight scene if logging is active
+        /// </summary>
+        /// <returns></returns>
         IEnumerator loggingRoutine()
         {
             while (HighLogic.LoadedSceneIsFlight)
@@ -265,8 +282,7 @@ namespace SaturatableRW
                 yield return new WaitForSeconds(1);
                 Debug.Log(string.Format("Saturation Limit: {0}\r\nMomentume X: {1}\r\nMomentum Y: {2}\r\nMomentum Z: {3}\r\nMax Roll Torque: {4}\r\nMax Pitch Torque: {5}"
                     + "\r\nMax Yaw Torque: {6}\r\nAvailable Roll Torque: {7}\r\nAvailable Pitch Torque: {8}\r\nAvailable Yaw Torque: {9}\r\nWheel State: {10}"
-                    , saturationLimit.ToString(), x_Moment.ToString(), y_Moment.ToString(), z_Moment.ToString(), maxRollTorque.ToString(), maxPitchTorque.ToString()
-                    , maxYawTorque.ToString(), availableRollTorque.ToString(), availablePitchTorque.ToString(), availableYawTorque.ToString(), this.wheelState.ToString()));
+                    , saturationLimit, x_Moment, y_Moment, z_Moment, maxRollTorque, maxPitchTorque, maxYawTorque, availableRollTorque, availablePitchTorque, availableYawTorque, this.wheelState));
             }
         }
     }
