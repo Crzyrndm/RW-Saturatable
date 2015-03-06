@@ -8,6 +8,17 @@ namespace SaturatableRW
 {
     public class RWSaturatable : ModuleReactionWheel
     {
+        ///////////////////////////////////////////////////////////////////////////////
+        /* This is not and is never intended to be a realistic representation of how reaction wheels work. That woud involve simulating
+         * effects such as gyroscopic stabilisation and precession that are not dependent only on the internal state of the part and current
+         * command inputs, but the rate of rotation of the vessel and would require applying forces without using the input system
+         * 
+         * Instead, a reaction wheel is simulated as an arbitrary object in a fixed position and orientation in space. Momentum is
+         * attributed to and decayed from these objects based on vessel alignment with their arbitrary axes. This system allows for
+         * a reasonable approximation of RW effects on control input but there are very noticeable inconsistencies with a realistic
+         * system. Most of these are design choices or bugs.
+         *///////////////////////////////////////////////////////////////////////////////
+
         /// <summary>
         /// Storable axis momentum = average axis torque * saturationScale
         /// </summary>
@@ -42,7 +53,7 @@ namespace SaturatableRW
         /// </summary>
         float averageTorque;
 
-        // Storing module torque since this module overrides the base values to take effect
+        // Storing module torque for reference since this module overrides the base values to take effect
         float maxRollTorque;
         float maxPitchTorque;
         float maxYawTorque;
@@ -71,6 +82,9 @@ namespace SaturatableRW
         [KSPField]
         public FloatCurve torqueCurve;
 
+        /// <summary>
+        /// Percentage of momentum to decay every second based on % saturation
+        /// </summary>
         [KSPField]
         public FloatCurve bleedRate;
 
@@ -79,12 +93,12 @@ namespace SaturatableRW
         public override void OnAwake()
         {
             base.OnAwake();
-
+            // I need a better way to make this module work at any time
             this.part.force_activate();
-
+            
+            // Float curve initialisation
             if (torqueCurve == null)
                 torqueCurve = new FloatCurve();
-
             if (bleedRate == null)
                 bleedRate = new FloatCurve();
         }
@@ -94,15 +108,15 @@ namespace SaturatableRW
             base.OnStart(state);
             if (HighLogic.LoadedSceneIsFlight)
             {
-                this.part.force_activate();
-
+                // remember reference torque values
                 maxRollTorque = this.RollTorque;
                 maxPitchTorque = this.PitchTorque;
                 maxYawTorque = this.YawTorque;
-
+                // average torque is only used for calculating saturation limits (which are the same for all axes)
                 averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
                 saturationLimit = averageTorque * saturationScale;
 
+                // debug check
                 print("0% saturation: " + torqueCurve.Evaluate(pctSaturation(0f, 1)));
                 print("25% saturation: " + torqueCurve.Evaluate(pctSaturation(0.25f, 1)));
                 print("50% saturation: " + torqueCurve.Evaluate(pctSaturation(0.5f, 1)));
@@ -114,8 +128,10 @@ namespace SaturatableRW
                 if (config == null)
                     config = KSP.IO.PluginConfiguration.CreateForType<RWSaturatable>();
                 config.load();
+
                 if (config.GetValue("LogDump", false))
                     StartCoroutine(loggingRoutine());
+
                 // save the file so it can be activated by anyone
                 config["LogDump"] = config.GetValue("LogDump", false);
                 config.save();
@@ -124,18 +140,22 @@ namespace SaturatableRW
 
         public override string GetInfo()
         {
+            // calc saturation limit
             averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
             saturationLimit = averageTorque * saturationScale;
-            float min, max;
-            bleedRate.FindMinMaxValue(out min, out max);
+            
             // Base info
             string info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms",
                                         PitchTorque, YawTorque, RollTorque, saturationLimit);
-            // display min/max if there is a difference, otherwise just one value
+            
+            // display min/max bleed rate if there is a difference, otherwise just one value
+            float min, max;
+            bleedRate.FindMinMaxValue(out min, out max);
             if (min == max)
                 info += string.Format("\r\n<b>Bleed Rate:</b> {0:F1}%", max * 100);
             else
                 info += string.Format("\r\n<b>Bleed Rate:\r\n\tMin:</b> {0:F1}%\r\n\t<b>Max:</b> {1:F1}%", min * 100, max * 100);
+            
             // resource consumption
             info += "\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>";
             foreach (ModuleResource res in this.inputResources)
@@ -188,7 +208,7 @@ namespace SaturatableRW
 
         private void updateTorque()
         {
-            // availble{*}Torque = display value
+            // available{*}Torque = display value
             // this.{*}Torque = actual control value
 
             // Roll
@@ -204,9 +224,11 @@ namespace SaturatableRW
             this.YawTorque = availableYawTorque;
         }
 
+        /// <summary>
+        /// increase momentum storage according to axis alignment
+        /// </summary>
         private void inputMoment(Vector3 vesselAxis, float input)
         {
-            // increase momentum storage according to axis alignment
             Vector3 scaledAxis = vesselAxis * input;
 
             x_Moment += Vector3.Dot(scaledAxis, Planetarium.forward);
@@ -214,41 +236,32 @@ namespace SaturatableRW
             z_Moment += Vector3.Dot(scaledAxis, Planetarium.right);
         }
 
+        /// <summary>
+        /// decrease momentum stored by a set percentage of the maximum torque that could be exerted on this axis
+        /// </summary>
         private float decayMoment(float moment, Vector3 refAxis)
         {
-            // normalise stored momentum towards zero by a percentage of maximum torque that would be applied on that axis
             float torqueMag = new Vector3(Vector3.Dot(this.vessel.transform.right, refAxis) * this.PitchTorque
-                                    , Vector3.Dot(this.vessel.transform.forward, refAxis) * this.YawTorque
-                                    , Vector3.Dot(this.vessel.transform.up, refAxis) * this.RollTorque).magnitude;
-            
-            if (moment > 0)
-                return moment - Mathf.Min(torqueMag * (bleedRate.Evaluate(pctSaturation(moment, saturationLimit))) * TimeWarp.fixedDeltaTime, moment);
-            else if (moment < 0)
-                return moment + Mathf.Max(torqueMag * (bleedRate.Evaluate(pctSaturation(moment, saturationLimit))) * TimeWarp.fixedDeltaTime, moment);
+                                        , Vector3.Dot(this.vessel.transform.forward, refAxis) * this.YawTorque
+                                        , Vector3.Dot(this.vessel.transform.up, refAxis) * this.RollTorque).magnitude;
+
+            float decay = torqueMag * (bleedRate.Evaluate(pctSaturation(moment, saturationLimit))) * TimeWarp.fixedDeltaTime;
+            if (moment > decay)
+                return moment - decay;
+            else if (moment < -decay)
+                return moment + decay;
             else
                 return 0;
         }
 
+        /// <summary>
+        /// The available torque for a given vessel axis and torque based on the momentum stored in world space
+        /// </summary>
         private float calcAvailableTorque(Vector3 refAxis, float maxAxisTorque)
         {
-            // this calculation is flawed, it does not account for the need to retain balance between all three axes applying torque and instead
-            // just requests a proportion from each no matter if the others can actually supply enough to balance that. It should be a vector that is
-            // scaled to the axis that limits it most
-            //////////////////////////////////////////////////////////////////////////////////////////////////
-            // calculate the torque available from each control axis depending on it's alignment
-            //Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward) * torqueCurve.Evaluate(pctSaturation(x_Moment, saturationLimit))
-            //                                , Vector3.Dot(refAxis, Planetarium.up) * torqueCurve.Evaluate(pctSaturation(y_Moment, saturationLimit))
-            //                                , Vector3.Dot(refAxis, Planetarium.right) * torqueCurve.Evaluate(pctSaturation(z_Moment, saturationLimit)));
-            //////////////////////////////////////////////////////////////////////////////////////////////////
-            // more correct calculation (hopefully)
-            // this is probably not the easiest way to do this
-            // 1) calc the torque available to a world space axis
-            // 1a) I'm going to simplify this for the time being and assume that all axes have the same torque value
-            // 2) project a torque unit vector onto each world space axis
-            // 3) take the smallest ratio of 2) on 1) and scale the unit vector by that amount
             Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward), Vector3.Dot(refAxis, Planetarium.up), Vector3.Dot(refAxis, Planetarium.right));
             
-            // Smallest ratio is the scaling factor
+            // Smallest ratio is the scaling factor so set them huge as a default
             float ratiox = 1000000, ratioy = 1000000, ratioz = 1000000;
             if (torqueVec.x != 0)
                 ratiox = Mathf.Abs(torqueCurve.Evaluate(pctSaturation(x_Moment, saturationLimit)) / torqueVec.x);
