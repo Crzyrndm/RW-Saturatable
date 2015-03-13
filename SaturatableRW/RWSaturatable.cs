@@ -8,16 +8,16 @@ namespace SaturatableRW
 {
     public class RWSaturatable : ModuleReactionWheel
     {
-        ///////////////////////////////////////////////////////////////////////////////
-        /* This is not and is never intended to be a realistic representation of how reaction wheels work. That woud involve simulating
+        /*//////////////////////////////////////////////////////////////////////////////
+         * This is not and is never intended to be a realistic representation of how reaction wheels work. That woud involve simulating
          * effects such as gyroscopic stabilisation and precession that are not dependent only on the internal state of the part and current
          * command inputs, but the rate of rotation of the vessel and would require applying forces without using the input system
          * 
-         * Instead, a reaction wheel is simulated as an arbitrary object in a fixed position and orientation in space. Momentum is
+         * Instead, a reaction wheel is simulated as an arbitrary object in a fixed orientation in space. Momentum is
          * attributed to and decayed from these objects based on vessel alignment with their arbitrary axes. This system allows for
          * a reasonable approximation of RW effects on control input but there are very noticeable inconsistencies with a realistic
-         * system. Most of these are design choices or bugs.
-         *///////////////////////////////////////////////////////////////////////////////
+         * system.
+        /*///////////////////////////////////////////////////////////////////////////////
 
         /// <summary>
         /// Storable axis momentum = average axis torque * saturationScale
@@ -46,7 +46,7 @@ namespace SaturatableRW
         /// <summary>
         /// Maximum momentum storable on an axis
         /// </summary>
-        float saturationLimit;
+        public float saturationLimit;
 
         /// <summary>
         /// Average torque over each axis (quick hack to make calculating the limit easy)
@@ -54,27 +54,27 @@ namespace SaturatableRW
         float averageTorque;
 
         // Storing module torque for reference since this module overrides the base values to take effect
-        float maxRollTorque;
-        float maxPitchTorque;
-        float maxYawTorque;
+        public float maxRollTorque;
+        public float maxPitchTorque;
+        public float maxYawTorque;
 
         /// <summary>
         /// torque available on the roll axis at current saturation
         /// </summary>
         [KSPField(guiActive = true, guiFormat = "F1")]
-        float availableRollTorque;
+        public float availableRollTorque;
 
         /// <summary>
         /// torque available on the pitch axis at current saturation
         /// </summary>
         [KSPField(guiActive = true, guiFormat = "F1")]
-        float availablePitchTorque;
+        public float availablePitchTorque;
 
         /// <summary>
         /// torque available on the yaw axis at current saturation
         /// </summary>
         [KSPField(guiActive = true, guiFormat = "F1")]
-        float availableYawTorque;
+        public float availableYawTorque;
 
         /// <summary>
         /// Torque available dependent on % saturation
@@ -88,19 +88,32 @@ namespace SaturatableRW
         [KSPField]
         public FloatCurve bleedRate;
 
-        static KSP.IO.PluginConfiguration config;
+        public bool drawWheel = false;
+
+        public static KSP.IO.PluginConfiguration config;
+
+        [KSPEvent(guiActive = true, active = true, guiName = "Toggle Window")]
+        public void ToggleWindow()
+        {
+            Window.Instance.showWindow = !Window.Instance.showWindow;
+        }
 
         public override void OnAwake()
         {
             base.OnAwake();
             // I need a better way to make this module work at any time
             this.part.force_activate();
-            
+
             // Float curve initialisation
             if (torqueCurve == null)
                 torqueCurve = new FloatCurve();
             if (bleedRate == null)
                 bleedRate = new FloatCurve();
+        }
+
+        public void OnDestroy()
+        {
+            Window.Instance.wheelsToDraw.Remove(this);
         }
 
         public override void OnStart(StartState state)
@@ -125,17 +138,33 @@ namespace SaturatableRW
                 
                 ////////////////////////////////////////////////////////////////////////////
                 /// logging worker /////////////////////////////////////////////////////////
-                if (config == null)
-                    config = KSP.IO.PluginConfiguration.CreateForType<RWSaturatable>();
-                config.load();
+                LoadConfig();
 
                 if (config.GetValue("LogDump", false))
                     StartCoroutine(loggingRoutine());
+                if (!config.GetValue("DefaultStateIsActive", true))
+                    this.State = ModuleReactionWheel.WheelState.Disabled;
 
                 // save the file so it can be activated by anyone
                 config["LogDump"] = config.GetValue("LogDump", false);
+                config["DefaultStateIsActive"] = config.GetValue("DefaultStateIsActive", true);
                 config.save();
             }
+            StartCoroutine(registerWheel());
+        }
+
+        IEnumerator registerWheel()
+        {
+            for (int i = 0; i < 10; i++)
+                yield return null;
+            Window.Instance.wheelsToDraw.Add(this);
+        }
+
+        public static void LoadConfig()
+        {
+            if (config == null)
+                config = KSP.IO.PluginConfiguration.CreateForType<RWSaturatable>();
+            config.load();
         }
 
         public override string GetInfo()
@@ -154,7 +183,7 @@ namespace SaturatableRW
             if (min == max)
                 info += string.Format("\r\n<b>Bleed Rate:</b> {0:F1}%", max * 100);
             else
-                info += string.Format("\r\n<b>Bleed Rate:\r\n\tMin:</b> {0:F1}%\r\n\t<b>Max:</b> {1:F1}%", min * 100, max * 100);
+                info += string.Format("\r\n<b>Bleed Rate:\r\n\tMin:</b> {0:0.#%}\r\n\t<b>Max:</b> {1:0.#%}", min, max);
             
             // resource consumption
             info += "\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>";
@@ -174,31 +203,31 @@ namespace SaturatableRW
             
             if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready)
                 return;
-            
-            if (this.State != WheelState.Active)
-                return;
 
             // update stored momentum
             updateMomentum();
+
             // update module torque outputs
             updateTorque();
         }
 
         private void updateMomentum()
         {
-            // input torque scale. Available torque gives exponential decay and will always have some torque available (should asymptotically approach bleed rate)
-            float rollInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.roll * availableRollTorque;
-            float pitchInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.pitch * availablePitchTorque;
-            float yawInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.yaw * availableYawTorque;
-
-            // increase momentum stored according to relevant inputs
-            // transform is based on the vessel not the part. 0 Pitch torque gives no pitch response for any part orientation
-            // roll == up vector
-            // yaw == forward vector
-            // pitch == right vector
-            inputMoment(this.vessel.transform.up, rollInput);
-            inputMoment(this.vessel.transform.right, pitchInput);
-            inputMoment(this.vessel.transform.forward, yawInput);
+            if (this.State == WheelState.Active)
+            {
+                // input torque scale. Available torque gives exponential decay and will always have some torque available (should asymptotically approach bleed rate)
+                float rollInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.roll * availableRollTorque;
+                float pitchInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.pitch * availablePitchTorque;
+                float yawInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.yaw * availableYawTorque;
+                // increase momentum stored according to relevant inputs
+                // transform is based on the vessel not the part. 0 Pitch torque gives no pitch response for any part orientation
+                // roll == up vector
+                // yaw == forward vector
+                // pitch == right vector
+                inputMoment(this.vessel.transform.up, rollInput);
+                inputMoment(this.vessel.transform.right, pitchInput);
+                inputMoment(this.vessel.transform.forward, yawInput);
+            }
 
             // reduce momentum stored by decay factor
             x_Moment = decayMoment(x_Moment, Planetarium.forward);
@@ -241,9 +270,9 @@ namespace SaturatableRW
         /// </summary>
         private float decayMoment(float moment, Vector3 refAxis)
         {
-            float torqueMag = new Vector3(Vector3.Dot(this.vessel.transform.right, refAxis) * this.PitchTorque
-                                        , Vector3.Dot(this.vessel.transform.forward, refAxis) * this.YawTorque
-                                        , Vector3.Dot(this.vessel.transform.up, refAxis) * this.RollTorque).magnitude;
+            float torqueMag = new Vector3(Vector3.Dot(this.vessel.transform.right, refAxis) * maxPitchTorque
+                                        , Vector3.Dot(this.vessel.transform.forward, refAxis) * maxYawTorque
+                                        , Vector3.Dot(this.vessel.transform.up, refAxis) * maxRollTorque).magnitude;
 
             float decay = torqueMag * (bleedRate.Evaluate(pctSaturation(moment, saturationLimit))) * TimeWarp.fixedDeltaTime;
             if (moment > decay)
@@ -293,9 +322,9 @@ namespace SaturatableRW
             while (HighLogic.LoadedSceneIsFlight)
             {
                 yield return new WaitForSeconds(1);
-                Debug.Log(string.Format("Saturation Limit: {0}\r\nMomentume X: {1}\r\nMomentum Y: {2}\r\nMomentum Z: {3}\r\nMax Roll Torque: {4}\r\nMax Pitch Torque: {5}"
-                    + "\r\nMax Yaw Torque: {6}\r\nAvailable Roll Torque: {7}\r\nAvailable Pitch Torque: {8}\r\nAvailable Yaw Torque: {9}\r\nWheel State: {10}"
-                    , saturationLimit, x_Moment, y_Moment, z_Moment, maxRollTorque, maxPitchTorque, maxYawTorque, availableRollTorque, availablePitchTorque, availableYawTorque, this.wheelState));
+                Debug.Log(string.Format("Vessel Name: {0}\r\nPart Name: {1}\r\nSaturation Limit: {2}\r\nMomentume X: {3}\r\nMomentum Y: {4}\r\nMomentum Z: {5}\r\nMax Roll Torque: {6}\r\nMax Pitch Torque: {7}"
+                    + "\r\nMax Yaw Torque: {8}\r\nAvailable Roll Torque: {9}\r\nAvailable Pitch Torque: {10}\r\nAvailable Yaw Torque: {11}\r\nWheel State: {12}"
+                    ,this.vessel.vesselName, this.part.partInfo.title, saturationLimit, x_Moment, y_Moment, z_Moment, maxRollTorque, maxPitchTorque, maxYawTorque, availableRollTorque, availablePitchTorque, availableYawTorque, this.wheelState));
             }
         }
     }
