@@ -25,7 +25,6 @@ namespace SaturatableRW
 
         void Start()
         {
-            instance = this;
             InitWindow();
         }
 
@@ -81,7 +80,7 @@ namespace SaturatableRW
             bool state = GUILayout.Toggle(rw.State == ModuleReactionWheel.WheelState.Active ? true : false, "Toggle Torque");
             rw.State = state ? ModuleReactionWheel.WheelState.Active : ModuleReactionWheel.WheelState.Disabled;
             
-            GUILayout.Label("\t\tAxis\t\tAvailable\t\tMax");
+            GUILayout.Label("\t\t<b>Axis</b>\t\t<b>Available</b>\t\t<b>Max</b>");
             GUILayout.Label(string.Format("\t\t{0}\t\t{1:0.0}kN\t\t\t{2:0.0}kN", "Pitch", rw.availablePitchTorque, rw.maxPitchTorque));
             GUILayout.Label(string.Format("\t\t{0}\t\t{1:0.0}kN\t\t\t{2:0.0}kN", "Yaw", rw.availableYawTorque, rw.maxYawTorque));
             GUILayout.Label(string.Format("\t\t{0}\t\t{1:0.0}kN\t\t\t{2:0.0}kN", "Roll", rw.availableRollTorque, rw.maxRollTorque));

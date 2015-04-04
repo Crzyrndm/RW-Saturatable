@@ -113,7 +113,8 @@ namespace SaturatableRW
 
         public void OnDestroy()
         {
-            Window.Instance.wheelsToDraw.Remove(this);
+            if (HighLogic.LoadedSceneIsFlight && Window.Instance != null)
+                Window.Instance.wheelsToDraw.Remove(this);
         }
 
         public override void OnStart(StartState state)
@@ -129,17 +130,9 @@ namespace SaturatableRW
                 averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
                 saturationLimit = averageTorque * saturationScale;
 
-                // debug check
-                print("0% saturation: " + torqueCurve.Evaluate(pctSaturation(0f, 1)));
-                print("25% saturation: " + torqueCurve.Evaluate(pctSaturation(0.25f, 1)));
-                print("50% saturation: " + torqueCurve.Evaluate(pctSaturation(0.5f, 1)));
-                print("75% saturation: " + torqueCurve.Evaluate(pctSaturation(0.75f, 1)));
-                print("100% saturation: " + torqueCurve.Evaluate(pctSaturation(1f, 1)));
-                
+                LoadConfig();
                 ////////////////////////////////////////////////////////////////////////////
                 /// logging worker /////////////////////////////////////////////////////////
-                LoadConfig();
-
                 if (config.GetValue("LogDump", false))
                     StartCoroutine(loggingRoutine());
                 if (!config.GetValue("DefaultStateIsActive", true))
@@ -149,8 +142,9 @@ namespace SaturatableRW
                 config["LogDump"] = config.GetValue("LogDump", false);
                 config["DefaultStateIsActive"] = config.GetValue("DefaultStateIsActive", true);
                 config.save();
+                
+                StartCoroutine(registerWheel());
             }
-            StartCoroutine(registerWheel());
         }
 
         IEnumerator registerWheel()
@@ -241,15 +235,15 @@ namespace SaturatableRW
             // this.{*}Torque = actual control value
 
             // Roll
-            availableRollTorque = calcAvailableTorque(this.vessel.transform.up, maxRollTorque);
+            availableRollTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.up, maxRollTorque));
             this.RollTorque = availableRollTorque;
 
             // Pitch
-            availablePitchTorque = calcAvailableTorque(this.vessel.transform.right, maxPitchTorque);
+            availablePitchTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.right, maxPitchTorque));
             this.PitchTorque = availablePitchTorque;
 
             // Yaw
-            availableYawTorque = calcAvailableTorque(this.vessel.transform.forward, maxYawTorque);
+            availableYawTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.forward, maxYawTorque));
             this.YawTorque = availableYawTorque;
         }
 
