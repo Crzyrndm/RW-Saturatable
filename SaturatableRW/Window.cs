@@ -17,9 +17,7 @@ namespace SaturatableRW
             }
         }
 
-
-        // UI Stuff
-        public List<RWSaturatable> wheelsToDraw = new List<RWSaturatable>();
+        public Dictionary<string, VesselInfo> Vessels = new Dictionary<string, VesselInfo>();
         Rect windowRect = new Rect();
         public bool showWindow = false;
 
@@ -32,7 +30,6 @@ namespace SaturatableRW
         {
             instance = this;
             
-            RWSaturatable.LoadConfig();
             loadConfig();
 
             RenderingManager.AddToPostDrawQueue(5, draw);
@@ -41,6 +38,10 @@ namespace SaturatableRW
 
         void loadConfig()
         {
+            if (RWSaturatable.config == null)
+                RWSaturatable.config = KSP.IO.PluginConfiguration.CreateForType<RWSaturatable2>();
+            RWSaturatable.config.load();
+
             windowRect = RWSaturatable.config.GetValue("windowRect", new Rect(500, 500, 300, 0));
             RWSaturatable.config["windowRect"] = windowRect;
         }
@@ -61,25 +62,49 @@ namespace SaturatableRW
 
         void drawWindow(int id)
         {
-            foreach (RWSaturatable rw in wheelsToDraw)
-                drawWheel(rw);
+            if (GUI.Button(new Rect(windowRect.width - 25, 5, 20, 20), "x"))
+                showWindow = false;
+
+            foreach (KeyValuePair<string, VesselInfo> ves in Vessels)
+                drawVessel(ves.Value);
 
             GUI.DragWindow();
         }
 
-        void drawWheel(RWSaturatable rw)
+        void drawVessel(VesselInfo ves)
         {
             Color backgroundColour = GUI.backgroundColor;
-            if (rw.vessel == FlightGlobals.ActiveVessel)
+            if (ves.vessel == FlightGlobals.ActiveVessel)
                 GUI.backgroundColor = XKCDColors.Green;
-            rw.drawWheel = GUILayout.Toggle(rw.drawWheel, rw.part.partInfo.title, GUI.skin.button);
+            ves.displayVes = GUILayout.Toggle(ves.displayVes, ves.vessel.vesselName, GUI.skin.button);
             GUI.backgroundColor = backgroundColour;
 
+            if (ves.displayVes)
+            {
+                bool state = GUILayout.Toggle(ves.forcedActive, "Toggle Vessel Torque");
+                if (state != ves.forcedActive)
+                {
+                    ves.forcedActive = state;
+                    ModuleReactionWheel.WheelState stateToSet = state ? ModuleReactionWheel.WheelState.Active : ModuleReactionWheel.WheelState.Disabled;
+                    foreach (RWSaturatable rw in ves.wheels)
+                        rw.State = stateToSet;
+                }
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(20);
+                GUILayout.BeginVertical();
+                foreach (RWSaturatable rw in ves.wheels)
+                    drawWheel(rw);
+                GUILayout.EndVertical();
+                GUILayout.EndHorizontal();
+            }
+        }
+
+        void drawWheel(RWSaturatable rw)
+        {
+            rw.drawWheel = GUILayout.Toggle(rw.drawWheel, rw.part.partInfo.title, GUI.skin.button);
+
             if (!rw.drawWheel)
-                return;
-            bool state = GUILayout.Toggle(rw.State == ModuleReactionWheel.WheelState.Active ? true : false, "Toggle Torque");
-            rw.State = state ? ModuleReactionWheel.WheelState.Active : ModuleReactionWheel.WheelState.Disabled;
-            
+                return;            
             GUILayout.Label("\t\t<b>Axis</b>\t\t<b>Available</b>\t\t<b>Max</b>");
             GUILayout.Label(string.Format("\t\t{0}\t\t{1:0.0}kN\t\t\t{2:0.0}kN", "Pitch", rw.availablePitchTorque, rw.maxPitchTorque));
             GUILayout.Label(string.Format("\t\t{0}\t\t{1:0.0}kN\t\t\t{2:0.0}kN", "Yaw", rw.availableYawTorque, rw.maxYawTorque));

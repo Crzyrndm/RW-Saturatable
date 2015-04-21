@@ -101,20 +101,22 @@ namespace SaturatableRW
         public override void OnAwake()
         {
             base.OnAwake();
-            // I need a better way to make this module work at any time
-            this.part.force_activate();
 
             // Float curve initialisation
             if (torqueCurve == null)
                 torqueCurve = new FloatCurve();
             if (bleedRate == null)
                 bleedRate = new FloatCurve();
+
+            // I need a better way to make this module work at any time
+            if (HighLogic.LoadedSceneIsFlight)
+                this.part.force_activate();
         }
 
         public void OnDestroy()
         {
-            if (HighLogic.LoadedSceneIsFlight && Window.Instance != null)
-                Window.Instance.wheelsToDraw.Remove(this);
+            if (HighLogic.LoadedSceneIsFlight && Window.Instance != null && Window.Instance.Vessels.ContainsKey(vessel.vesselName))
+                Window.Instance.Vessels.Remove(vessel.vesselName);
         }
 
         public override void OnStart(StartState state)
@@ -131,18 +133,7 @@ namespace SaturatableRW
                 saturationLimit = averageTorque * saturationScale;
 
                 LoadConfig();
-                ////////////////////////////////////////////////////////////////////////////
-                /// logging worker /////////////////////////////////////////////////////////
-                if (config.GetValue("LogDump", false))
-                    StartCoroutine(loggingRoutine());
-                if (!config.GetValue("DefaultStateIsActive", true))
-                    this.State = ModuleReactionWheel.WheelState.Disabled;
-
-                // save the file so it can be activated by anyone
-                config["LogDump"] = config.GetValue("LogDump", false);
-                config["DefaultStateIsActive"] = config.GetValue("DefaultStateIsActive", true);
-                config.save();
-                
+                                
                 StartCoroutine(registerWheel());
             }
         }
@@ -151,14 +142,28 @@ namespace SaturatableRW
         {
             for (int i = 0; i < 10; i++)
                 yield return null;
-            Window.Instance.wheelsToDraw.Add(this);
+            
+            if (!Window.Instance.Vessels.ContainsKey(vessel.vesselName))
+                Window.Instance.Vessels.Add(vessel.vesselName, new VesselInfo(vessel, this.State == WheelState.Active));
+
+            Window.Instance.Vessels[vessel.vesselName].wheels.Add(this);
         }
 
-        public static void LoadConfig()
+        public void LoadConfig()
         {
             if (config == null)
                 config = KSP.IO.PluginConfiguration.CreateForType<RWSaturatable>();
             config.load();
+
+            if (config.GetValue("LogDump", false))
+                StartCoroutine(loggingRoutine());
+            if (!config.GetValue("DefaultStateIsActive", true) && vessel.atmDensity > 0.001)
+                this.State = ModuleReactionWheel.WheelState.Disabled;
+
+            // save the file so it can be activated by anyone
+            config["LogDump"] = config.GetValue("LogDump", false);
+            config["DefaultStateIsActive"] = config.GetValue("DefaultStateIsActive", true);
+            config.save();
         }
 
         public override string GetInfo()
@@ -191,7 +196,7 @@ namespace SaturatableRW
             return info;
         }
 
-        public override void OnFixedUpdate()
+        public void FixedUpdate()
         {
             base.OnFixedUpdate();
             

@@ -50,6 +50,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="RWSaturatable2.cs" />
+    <Compile Include="VesselInfo.cs" />
     <Compile Include="RWSaturatable.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Window.cs" />
