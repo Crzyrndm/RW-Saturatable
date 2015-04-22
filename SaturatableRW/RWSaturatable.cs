@@ -196,7 +196,7 @@ namespace SaturatableRW
             return info;
         }
 
-        public void FixedUpdate()
+        public override void OnFixedUpdate()
         {
             base.OnFixedUpdate();
             
