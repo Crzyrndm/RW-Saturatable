@@ -115,8 +115,22 @@ namespace SaturatableRW
 
         public void OnDestroy()
         {
-            if (HighLogic.LoadedSceneIsFlight && Window.Instance != null && Window.Instance.Vessels.ContainsKey(vessel.vesselName))
-                Window.Instance.Vessels.Remove(vessel.vesselName);
+            if (!HighLogic.LoadedSceneIsFlight)
+                return;
+            if (Window.Instance == null)
+                return;
+            if (Window.Instance.Vessels == null)
+                return;
+            try
+            {
+                if (Window.Instance.Vessels.ContainsKey(vessel.vesselName))
+                    Window.Instance.Vessels.Remove(vessel.vesselName);
+            }
+            catch (Exception ex)
+            {
+                Debug.Log(ex.InnerException);
+                Debug.Log(ex.StackTrace);
+            }
         }
 
         public override void OnStart(StartState state)
@@ -199,7 +213,7 @@ namespace SaturatableRW
         public override void OnFixedUpdate()
         {
             base.OnFixedUpdate();
-            
+
             if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready)
                 return;
 
