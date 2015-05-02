@@ -128,7 +128,6 @@ namespace SaturatableRW
             }
             catch (Exception ex)
             {
-                Debug.Log(ex.InnerException);
                 Debug.Log(ex.StackTrace);
             }
         }
