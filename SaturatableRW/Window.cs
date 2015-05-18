@@ -33,7 +33,6 @@ namespace SaturatableRW
             loadConfig();
 
             RenderingManager.AddToPostDrawQueue(5, draw);
-            Debug.Log("Draw call added");
         }
 
         void loadConfig()
@@ -57,7 +56,7 @@ namespace SaturatableRW
             GUI.skin = HighLogic.Skin;
 
             if (showWindow)
-                windowRect = GUILayout.Window(573638, windowRect, drawWindow, "Semi-Saturatable Reaction Wheels", GUILayout.Height(0));
+                windowRect = GUILayout.Window(573638, windowRect, drawWindow, "Semi-Saturatable Reaction Wheels", GUILayout.Height(0), GUILayout.Width(0), GUILayout.MinWidth(300));
         }
 
         void drawWindow(int id)
@@ -101,14 +100,25 @@ namespace SaturatableRW
 
         void drawWheel(RWSaturatable rw)
         {
-            rw.drawWheel = GUILayout.Toggle(rw.drawWheel, rw.part.partInfo.title, GUI.skin.button);
+            Color backgroundColour = GUI.backgroundColor;
+            if (rw.State == ModuleReactionWheel.WheelState.Active)
+                    GUI.backgroundColor = XKCDColors.Green;
+            bool tmp = GUILayout.Toggle(rw.drawWheel, rw.part.partInfo.title, GUI.skin.button);
+            GUI.backgroundColor = backgroundColour;
+            if (tmp != rw.drawWheel)
+            {
+                if (Event.current.button == 0)
+                    rw.drawWheel = tmp;
+                else if (Event.current.button == 1)
+                    rw.State = rw.State == ModuleReactionWheel.WheelState.Disabled ? ModuleReactionWheel.WheelState.Active : ModuleReactionWheel.WheelState.Disabled;
+            }
 
             if (!rw.drawWheel)
                 return;            
-            GUILayout.Label("\t\t<b>Axis</b>\t\t<b>Available</b>\t\t<b>Max</b>");
-            GUILayout.Label(string.Format("\t\t{0}\t\t{1:0.0}kN\t\t\t{2:0.0}kN", "Pitch", rw.availablePitchTorque, rw.maxPitchTorque));
-            GUILayout.Label(string.Format("\t\t{0}\t\t{1:0.0}kN\t\t\t{2:0.0}kN", "Yaw", rw.availableYawTorque, rw.maxYawTorque));
-            GUILayout.Label(string.Format("\t\t{0}\t\t{1:0.0}kN\t\t\t{2:0.0}kN", "Roll", rw.availableRollTorque, rw.maxRollTorque));
+            GUILayout.Label("<b>Axis</b>\t\t<b>Available</b>\t<b>Max</b>");
+            GUILayout.Label(string.Format("{0}\t\t{1:0.0}kN\t\t{2:0.0}kN", "Pitch", rw.availablePitchTorque, rw.maxPitchTorque));
+            GUILayout.Label(string.Format("{0}\t\t{1:0.0}kN\t\t{2:0.0}kN", "Yaw", rw.availableYawTorque, rw.maxYawTorque));
+            GUILayout.Label(string.Format("{0}\t\t{1:0.0}kN\t\t{2:0.0}kN", "Roll", rw.availableRollTorque, rw.maxRollTorque));
         }
     }
 }

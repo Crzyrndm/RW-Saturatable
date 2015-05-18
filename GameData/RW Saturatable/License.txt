@@ -1,2 +1,0 @@
-Plugin is licensed under GPL v3
-Credit for the basic idea goes to KSP forum user alecdacyczyn

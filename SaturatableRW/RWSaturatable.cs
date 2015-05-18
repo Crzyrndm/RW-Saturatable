@@ -172,10 +172,17 @@ namespace SaturatableRW
                 StartCoroutine(loggingRoutine());
             if (!config.GetValue("DefaultStateIsActive", true) && vessel.atmDensity > 0.001)
                 this.State = ModuleReactionWheel.WheelState.Disabled;
+            if (!config.GetValue("DisplayCurrentTorque", false))
+            {
+                this.Fields["availablePitchTorque"].guiActive = false;
+                this.Fields["availableRollTorque"].guiActive = false;
+                this.Fields["availableYawTorque"].guiActive = false;
+            }
 
             // save the file so it can be activated by anyone
             config["LogDump"] = config.GetValue("LogDump", false);
             config["DefaultStateIsActive"] = config.GetValue("DefaultStateIsActive", true);
+            config["DisplayCurrentTorque"] = config.GetValue("DisplayCurrentTorque", false);
             config.save();
         }
 
