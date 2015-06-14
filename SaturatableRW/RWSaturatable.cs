@@ -88,6 +88,38 @@ namespace SaturatableRW
         [KSPField]
         public FloatCurve bleedRate;
 
+        /// <summary>
+        /// When true, wheel will dump momentum at a fixed rate in exchange for a certain amount of a resource (eg. monopropellant)
+        /// Toggle through the window (and sets false when it runs out of resources or stored momentum)
+        /// </summary>
+        public bool bConsumeResource = false;
+
+        /// <summary>
+        /// string detailing resource usage for momentum discharge
+        /// syntax will be: "resourceName1","units/s";"resourceName2","units/s";...
+        /// </summary>
+        [KSPField]
+        public string resources;
+
+        public List<ResourceConsumer> dischargeResources;
+        public class ResourceConsumer
+        {
+            public int ID { get; set; }
+            public double Rate { get; set; }
+            public ResourceConsumer(int id, double rate)
+            {
+                ID = id;
+                Rate = rate;
+            }
+        }
+        public bool canForceDischarge = false;
+
+        /// <summary>
+        /// The fixed % of saturation to recover per second of discharge
+        /// </summary>
+        [KSPField]
+        public float recoveryRate;
+
         public bool drawWheel = false;
 
         public static KSP.IO.PluginConfiguration config;
@@ -111,6 +143,27 @@ namespace SaturatableRW
             // I need a better way to make this module work at any time
             if (HighLogic.LoadedSceneIsFlight)
                 this.part.force_activate();
+
+            if (!string.IsNullOrEmpty(resources))
+            {
+                dischargeResources = new List<ResourceConsumer>();
+                foreach (string pair in resources.Split(';'))
+                {
+                    if (!string.IsNullOrEmpty(pair))
+                    {
+                        string[] nameAndRate = pair.Split(',');
+                        if (nameAndRate.Length == 2)
+                        {
+                            int id = PartResourceLibrary.Instance.resourceDefinitions.FirstOrDefault(prd => prd.name == nameAndRate[0].Trim()).id;
+                            double rate = 0;
+                            double.TryParse(nameAndRate[1].Trim(), out rate);
+                            dischargeResources.Add(new ResourceConsumer(id, rate));
+                        }
+                    }
+                }
+                if (dischargeResources.Any(rc => rc.Rate > 0))
+                    canForceDischarge = true;
+            }
         }
 
         public void OnDestroy()
@@ -222,12 +275,43 @@ namespace SaturatableRW
 
             if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready)
                 return;
+            
+            useResourcesToRecover();
 
             // update stored momentum
             updateMomentum();
 
             // update module torque outputs
             updateTorque();
+        }
+
+        private void useResourcesToRecover()
+        {
+            if (!bConsumeResource || !canForceDischarge)
+                return;
+
+            float momentumToRemove = TimeWarp.fixedDeltaTime * recoveryRate * saturationLimit;
+            float x_momentToRemove = Math.Min(x_Moment, momentumToRemove);
+            float y_momentToRemove = Math.Min(y_Moment, momentumToRemove);
+            float z_momentToRemove = Math.Min(z_Moment, momentumToRemove);
+            double resourcePctToRequest = (x_momentToRemove + y_momentToRemove + z_momentToRemove) / (3 * momentumToRemove); // reduce the resource consumption if less is removed
+
+            foreach (ResourceConsumer rc in dischargeResources)
+            {
+                double amount = rc.Rate * resourcePctToRequest * TimeWarp.fixedDeltaTime;
+                double actual = part.RequestResource(rc.ID, amount);
+                if (actual < amount * 0.99)
+                {
+                    bConsumeResource = false;
+                    ScreenMessages.PostScreenMessage("[Saturatable RW] Momentum discharge halted due to lack of resources");
+                }
+            }
+            x_Moment -= x_momentToRemove;
+            y_Moment -= y_momentToRemove;
+            z_Moment -= z_momentToRemove;
+
+            if (x_Moment == 0 && y_Moment == 0 && z_Moment == 0)
+                bConsumeResource = false;
         }
 
         private void updateMomentum()
@@ -249,9 +333,9 @@ namespace SaturatableRW
             }
 
             // reduce momentum stored by decay factor
-            x_Moment = decayMoment(x_Moment, Planetarium.forward);
-            y_Moment = decayMoment(y_Moment, Planetarium.up);
-            z_Moment = decayMoment(z_Moment, Planetarium.right);
+            //x_Moment = decayMoment(x_Moment, Planetarium.forward);
+            //y_Moment = decayMoment(y_Moment, Planetarium.up);
+            //z_Moment = decayMoment(z_Moment, Planetarium.right);
         }
 
         private void updateTorque()

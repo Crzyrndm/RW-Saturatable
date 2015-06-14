@@ -100,6 +100,7 @@ namespace SaturatableRW
 
         void drawWheel(RWSaturatable rw)
         {
+            GUILayout.BeginHorizontal();
             Color backgroundColour = GUI.backgroundColor;
             if (rw.State == ModuleReactionWheel.WheelState.Active)
                     GUI.backgroundColor = XKCDColors.Green;
@@ -112,6 +113,11 @@ namespace SaturatableRW
                 else if (Event.current.button == 1)
                     rw.State = rw.State == ModuleReactionWheel.WheelState.Disabled ? ModuleReactionWheel.WheelState.Active : ModuleReactionWheel.WheelState.Disabled;
             }
+            if (rw.canForceDischarge)
+            {
+                rw.bConsumeResource = GUILayout.Toggle(rw.bConsumeResource, "", GUI.skin.button, GUILayout.Width(40));
+            }
+            GUILayout.EndHorizontal();
 
             if (!rw.drawWheel)
                 return;            
