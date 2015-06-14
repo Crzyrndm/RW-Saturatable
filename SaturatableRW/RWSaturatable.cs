@@ -333,9 +333,9 @@ namespace SaturatableRW
             }
 
             // reduce momentum stored by decay factor
-            //x_Moment = decayMoment(x_Moment, Planetarium.forward);
-            //y_Moment = decayMoment(y_Moment, Planetarium.up);
-            //z_Moment = decayMoment(z_Moment, Planetarium.right);
+            x_Moment = decayMoment(x_Moment, Planetarium.forward);
+            y_Moment = decayMoment(y_Moment, Planetarium.up);
+            z_Moment = decayMoment(z_Moment, Planetarium.right);
         }
 
         private void updateTorque()
