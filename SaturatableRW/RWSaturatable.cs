@@ -344,16 +344,16 @@ namespace SaturatableRW
             // this.{*}Torque = actual control value
 
             // Roll
-            availableRollTorque = bConsumeResource ? 0 : Math.Abs(calcAvailableTorque(this.vessel.transform.up, maxRollTorque));
-            this.RollTorque = availableRollTorque;
+            availableRollTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.up, maxRollTorque));
+            this.RollTorque = bConsumeResource ? 0 : availableRollTorque;
 
             // Pitch
-            availablePitchTorque = bConsumeResource ? 0 : Math.Abs(calcAvailableTorque(this.vessel.transform.right, maxPitchTorque));
-            this.PitchTorque = availablePitchTorque;
+            availablePitchTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.right, maxPitchTorque));
+            this.PitchTorque = bConsumeResource ? 0 : availablePitchTorque;
 
             // Yaw
-            availableYawTorque = bConsumeResource ? 0 : Math.Abs(calcAvailableTorque(this.vessel.transform.forward, maxYawTorque));
-            this.YawTorque = availableYawTorque;
+            availableYawTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.forward, maxYawTorque));
+            this.YawTorque = bConsumeResource ? 0 : availableYawTorque;
         }
 
         /// <summary>
