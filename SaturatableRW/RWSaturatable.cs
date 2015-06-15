@@ -94,14 +94,8 @@ namespace SaturatableRW
         /// </summary>
         public bool bConsumeResource = false;
 
-        /// <summary>
-        /// string detailing resource usage for momentum discharge
-        /// syntax will be: "resourceName1","units/s";"resourceName2","units/s";...
-        /// </summary>
-        [KSPField]
-        public string resources;
-
         public List<ResourceConsumer> dischargeResources;
+        public MomentumDischargeThruster dummyRCS;
         public class ResourceConsumer
         {
             public int ID { get; set; }
@@ -114,13 +108,15 @@ namespace SaturatableRW
                 FlowMode = flowMode;
             }
         }
+        /// <summary>
+        /// if false, resource consumption is disallowed
+        /// </summary>
         public bool canForceDischarge = false;
 
         /// <summary>
-        /// The fixed % of saturation to recover per second of discharge
+        /// The momentum to recover per second of discharge
         /// </summary>
-        [KSPField]
-        public float recoveryRate;
+        public float dischargeRate;
 
         public bool drawWheel = false;
 
@@ -146,25 +142,19 @@ namespace SaturatableRW
             if (HighLogic.LoadedSceneIsFlight)
                 this.part.force_activate();
 
-            if (!string.IsNullOrEmpty(resources))
+            dischargeResources = new List<ResourceConsumer>();
+            dummyRCS = part.Modules["MomentumDischargeThruster"] as MomentumDischargeThruster;
+            if (dummyRCS != null)
             {
-                dischargeResources = new List<ResourceConsumer>();
-                foreach (string pair in resources.Split(';'))
+                dischargeRate = dummyRCS.thrusterPower;
+                double ISP = dummyRCS.atmosphereCurve.Evaluate(0);
+                double totalPropellantMassRatio = dummyRCS.propellants.Sum(r => r.ratio * PartResourceLibrary.Instance.resourceDefinitions[r.id].density);
+                double totalMassRate = dummyRCS.thrusterPower * saturationLimit / (ISP * dummyRCS.G);
+                foreach (Propellant p in dummyRCS.propellants)
                 {
-                    if (!string.IsNullOrEmpty(pair))
-                    {
-                        string[] nameAndRate = pair.Split(',');
-                        if (nameAndRate.Length == 2)
-                        {
-                            PartResourceDefinition res = PartResourceLibrary.Instance.resourceDefinitions.FirstOrDefault(prd => prd.name == nameAndRate[0].Trim());
-                            if (res != null)
-                            {
-                                double rate = 0;
-                                double.TryParse(nameAndRate[1].Trim(), out rate);
-                                dischargeResources.Add(new ResourceConsumer(res.id, rate, res.resourceFlowMode));
-                            }
-                        }
-                    }
+                    PartResourceDefinition res = PartResourceLibrary.Instance.resourceDefinitions[p.id];
+                    double propellantRate = p.ratio * totalMassRate / totalPropellantMassRatio;
+                    dischargeResources.Add(new ResourceConsumer(res.id, propellantRate, res.resourceFlowMode));
                 }
                 if (dischargeResources.Any(rc => rc.Rate > 0))
                     canForceDischarge = true;
@@ -180,7 +170,7 @@ namespace SaturatableRW
                 if (Window.Instance.Vessels.ContainsKey(vessel.vesselName))
                     Window.Instance.Vessels.Remove(vessel.vesselName);
             }
-            catch (Exception ex)
+            catch //(Exception ex)
             {
                 //Debug.Log(ex.StackTrace);
             }
@@ -291,7 +281,7 @@ namespace SaturatableRW
             if (!bConsumeResource || !canForceDischarge)
                 return;
 
-            float momentumToRemove = TimeWarp.fixedDeltaTime * recoveryRate * saturationLimit;
+            float momentumToRemove = TimeWarp.fixedDeltaTime * dischargeRate * saturationLimit;
             float x_momentToRemove = Mathf.Clamp(x_Moment, -momentumToRemove, momentumToRemove);
             float y_momentToRemove = Mathf.Clamp(y_Moment, -momentumToRemove, momentumToRemove);
             float z_momentToRemove = Mathf.Clamp(z_Moment, -momentumToRemove, momentumToRemove);
@@ -303,7 +293,6 @@ namespace SaturatableRW
                 double requestedAmount = rc.Rate * resourcePctToRequest * TimeWarp.fixedDeltaTime;
                 pctRequestable = Math.Min(total / requestedAmount, pctRequestable);
             }
-            Debug.Log(pctRequestable);
             if (pctRequestable < 0.01 || resourcePctToRequest < 0.01)
                 bConsumeResource = false;
             else
