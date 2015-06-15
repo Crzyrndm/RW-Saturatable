@@ -106,10 +106,12 @@ namespace SaturatableRW
         {
             public int ID { get; set; }
             public double Rate { get; set; }
-            public ResourceConsumer(int id, double rate)
+            public ResourceFlowMode FlowMode { get; set; }
+            public ResourceConsumer(int id, double rate, ResourceFlowMode flowMode)
             {
                 ID = id;
                 Rate = rate;
+                FlowMode = flowMode;
             }
         }
         public bool canForceDischarge = false;
@@ -124,7 +126,7 @@ namespace SaturatableRW
 
         public static KSP.IO.PluginConfiguration config;
 
-        [KSPEvent(guiActive = true, active = true, guiName = "Toggle Window")]
+        [KSPEvent(guiActive = true, active = true, guiName = "Toggle RW Window")]
         public void ToggleWindow()
         {
             Window.Instance.showWindow = !Window.Instance.showWindow;
@@ -154,10 +156,13 @@ namespace SaturatableRW
                         string[] nameAndRate = pair.Split(',');
                         if (nameAndRate.Length == 2)
                         {
-                            int id = PartResourceLibrary.Instance.resourceDefinitions.FirstOrDefault(prd => prd.name == nameAndRate[0].Trim()).id;
-                            double rate = 0;
-                            double.TryParse(nameAndRate[1].Trim(), out rate);
-                            dischargeResources.Add(new ResourceConsumer(id, rate));
+                            PartResourceDefinition res = PartResourceLibrary.Instance.resourceDefinitions.FirstOrDefault(prd => prd.name == nameAndRate[0].Trim());
+                            if (res != null)
+                            {
+                                double rate = 0;
+                                double.TryParse(nameAndRate[1].Trim(), out rate);
+                                dischargeResources.Add(new ResourceConsumer(res.id, rate, res.resourceFlowMode));
+                            }
                         }
                     }
                 }
@@ -168,11 +173,7 @@ namespace SaturatableRW
 
         public void OnDestroy()
         {
-            if (!HighLogic.LoadedSceneIsFlight)
-                return;
-            if (Window.Instance == null)
-                return;
-            if (Window.Instance.Vessels == null)
+            if (!HighLogic.LoadedSceneIsFlight || Window.Instance == null || Window.Instance.Vessels == null)
                 return;
             try
             {
@@ -181,7 +182,7 @@ namespace SaturatableRW
             }
             catch (Exception ex)
             {
-                Debug.Log(ex.StackTrace);
+                //Debug.Log(ex.StackTrace);
             }
         }
 
@@ -291,27 +292,38 @@ namespace SaturatableRW
                 return;
 
             float momentumToRemove = TimeWarp.fixedDeltaTime * recoveryRate * saturationLimit;
-            float x_momentToRemove = Math.Min(x_Moment, momentumToRemove);
-            float y_momentToRemove = Math.Min(y_Moment, momentumToRemove);
-            float z_momentToRemove = Math.Min(z_Moment, momentumToRemove);
-            double resourcePctToRequest = (x_momentToRemove + y_momentToRemove + z_momentToRemove) / (3 * momentumToRemove); // reduce the resource consumption if less is removed
-
+            float x_momentToRemove = Mathf.Clamp(x_Moment, -momentumToRemove, momentumToRemove);
+            float y_momentToRemove = Mathf.Clamp(y_Moment, -momentumToRemove, momentumToRemove);
+            float z_momentToRemove = Mathf.Clamp(z_Moment, -momentumToRemove, momentumToRemove);
+            double resourcePctToRequest = (Math.Abs(x_momentToRemove) + Math.Abs(y_momentToRemove) + Math.Abs(z_momentToRemove)) / (3 * momentumToRemove); // reduce the resource consumption if less is removed
+            double pctRequestable = 1;
             foreach (ResourceConsumer rc in dischargeResources)
             {
-                double amount = rc.Rate * resourcePctToRequest * TimeWarp.fixedDeltaTime;
-                double actual = part.RequestResource(rc.ID, amount);
-                if (actual < amount * 0.99)
-                {
-                    bConsumeResource = false;
-                    ScreenMessages.PostScreenMessage("[Saturatable RW] Momentum discharge halted due to lack of resources");
-                }
+                double total = getConnectedResources(rc).Sum(r => r.amount);
+                double requestedAmount = rc.Rate * resourcePctToRequest * TimeWarp.fixedDeltaTime;
+                pctRequestable = Math.Min(total / requestedAmount, pctRequestable);
             }
-            x_Moment -= x_momentToRemove;
-            y_Moment -= y_momentToRemove;
-            z_Moment -= z_momentToRemove;
-
-            if (x_Moment == 0 && y_Moment == 0 && z_Moment == 0)
+            Debug.Log(pctRequestable);
+            if (pctRequestable < 0.01 || resourcePctToRequest < 0.01)
                 bConsumeResource = false;
+            else
+            {
+                foreach (ResourceConsumer rc in dischargeResources)
+                {
+                    double amount = rc.Rate * resourcePctToRequest * pctRequestable * TimeWarp.fixedDeltaTime;
+                    part.RequestResource(rc.ID, amount);
+                }
+                x_Moment -= x_momentToRemove;
+                y_Moment -= y_momentToRemove;
+                z_Moment -= z_momentToRemove;
+            }
+        }
+
+        public List<PartResource> getConnectedResources(ResourceConsumer rc)
+        {
+            List<PartResource> connectedResources = new List<PartResource>();
+            part.GetConnectedResources(rc.ID, rc.FlowMode, connectedResources);
+            return connectedResources;
         }
 
         private void updateMomentum()
