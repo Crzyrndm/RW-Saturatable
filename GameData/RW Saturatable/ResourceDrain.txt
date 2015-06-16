@@ -1,0 +1,23 @@
+@PART[*]:HAS[@MODULE[RWSaturatable]]:AFTER[RWSaturatable]
+{
+	MODULE // This module enables discharging momentum through resource use. Change file extension to .cfg to use
+	{
+		name = MomentumDischargeThruster
+		thrusterPower = 0.05 // pct of momentum limit to discharge per second
+		thrusterTransformName = delete
+		atmosphereCurve
+		{
+			key = 0 240
+		}
+		PROPELLANT
+		{
+			name = ElectricCharge
+			ratio = 10
+		}
+		PROPELLANT
+		{
+			name = MonoPropellant
+			ratio = 1
+		}
+	}
+}

@@ -38,7 +38,7 @@ namespace SaturatableRW
         void loadConfig()
         {
             if (RWSaturatable.config == null)
-                RWSaturatable.config = KSP.IO.PluginConfiguration.CreateForType<RWSaturatable2>();
+                RWSaturatable.config = KSP.IO.PluginConfiguration.CreateForType<RWSaturatable>();
             RWSaturatable.config.load();
 
             windowRect = RWSaturatable.config.GetValue("windowRect", new Rect(500, 500, 300, 0));

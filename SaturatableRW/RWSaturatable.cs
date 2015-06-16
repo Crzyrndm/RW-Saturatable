@@ -143,7 +143,7 @@ namespace SaturatableRW
                 this.part.force_activate();
 
             dischargeResources = new List<ResourceConsumer>();
-            dummyRCS = part.Modules["MomentumDischargeThruster"] as MomentumDischargeThruster;
+            dummyRCS = part.Modules.GetModules<MomentumDischargeThruster>().FirstOrDefault();
             if (dummyRCS != null)
             {
                 dischargeRate = dummyRCS.thrusterPower;
@@ -317,7 +317,7 @@ namespace SaturatableRW
 
         private void updateMomentum()
         {
-            if (this.State == WheelState.Active)
+            if (this.State == WheelState.Active && !bConsumeResource)
             {
                 // input torque scale. Available torque gives exponential decay and will always have some torque available (should asymptotically approach bleed rate)
                 float rollInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.roll * availableRollTorque;
