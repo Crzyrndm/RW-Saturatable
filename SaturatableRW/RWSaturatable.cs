@@ -9,7 +9,7 @@ namespace SaturatableRW
     public class RWSaturatable : ModuleReactionWheel
     {
         /*//////////////////////////////////////////////////////////////////////////////
-         * This is not and is never intended to be a realistic representation of how reaction wheels work. That woud involve simulating
+         * This is not and is never intended to be a realistic representation of how reaction wheels work. That would involve simulating
          * effects such as gyroscopic stabilisation and precession that are not dependent only on the internal state of the part and current
          * command inputs, but the rate of rotation of the vessel and would require applying forces without using the input system
          * 
@@ -47,12 +47,7 @@ namespace SaturatableRW
         /// Maximum momentum storable on an axis
         /// </summary>
         public float saturationLimit;
-
-        /// <summary>
-        /// Average torque over each axis (quick hack to make calculating the limit easy)
-        /// </summary>
-        float averageTorque;
-
+        
         // Storing module torque for reference since this module overrides the base values to take effect
         public float maxRollTorque;
         public float maxPitchTorque;
@@ -88,6 +83,12 @@ namespace SaturatableRW
         [KSPField]
         public FloatCurve bleedRate;
 
+        /// <summary>
+        /// Globally scale down output torque
+        /// </summary>
+        [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Torque Throttle")]
+        [UI_FloatRange(minValue = 0, maxValue = 1, stepIncrement = 0.02f)]
+        public float torqueThrottle = 1;
         /// <summary>
         /// When true, wheel will dump momentum at a fixed rate in exchange for a certain amount of a resource (eg. monopropellant)
         /// Toggle through the window (and sets false when it runs out of resources or stored momentum)
@@ -185,9 +186,8 @@ namespace SaturatableRW
                 maxRollTorque = this.RollTorque;
                 maxPitchTorque = this.PitchTorque;
                 maxYawTorque = this.YawTorque;
-                // average torque is only used for calculating saturation limits (which are the same for all axes)
-                averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
-                saturationLimit = averageTorque * saturationScale;
+
+                saturationLimit = (this.PitchTorque + this.YawTorque + this.RollTorque) * saturationScale / 3;
 
                 LoadConfig();
                                 
@@ -232,9 +232,7 @@ namespace SaturatableRW
 
         public override string GetInfo()
         {
-            // calc saturation limit
-            averageTorque = (this.PitchTorque + this.YawTorque + this.RollTorque) / 3;
-            saturationLimit = averageTorque * saturationScale;
+            saturationLimit = (this.PitchTorque + this.YawTorque + this.RollTorque) * saturationScale / 3;
             
             // Base info
             string info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms",
@@ -345,15 +343,15 @@ namespace SaturatableRW
             // this.{*}Torque = actual control value
 
             // Roll
-            availableRollTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.up, maxRollTorque));
+            availableRollTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.up, maxRollTorque)) * torqueThrottle;
             this.RollTorque = bConsumeResource ? 0 : availableRollTorque;
 
             // Pitch
-            availablePitchTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.right, maxPitchTorque));
+            availablePitchTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.right, maxPitchTorque)) * torqueThrottle;
             this.PitchTorque = bConsumeResource ? 0 : availablePitchTorque;
 
             // Yaw
-            availableYawTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.forward, maxYawTorque));
+            availableYawTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.forward, maxYawTorque)) * torqueThrottle;
             this.YawTorque = bConsumeResource ? 0 : availableYawTorque;
         }
 
