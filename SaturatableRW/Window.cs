@@ -31,8 +31,6 @@ namespace SaturatableRW
             instance = this;
             
             loadConfig();
-
-            RenderingManager.AddToPostDrawQueue(5, draw);
         }
 
         void loadConfig()
@@ -51,12 +49,10 @@ namespace SaturatableRW
             RWSaturatable.config.save();
         }
 
-        void draw()
+        void OnGUI()
         {
-            GUI.skin = HighLogic.Skin;
-
             if (showWindow)
-                windowRect = GUILayout.Window(573638, windowRect, drawWindow, "Semi-Saturatable Reaction Wheels", GUILayout.Height(0), GUILayout.Width(0), GUILayout.MinWidth(300));
+                windowRect = GUILayout.Window(573638, windowRect, drawWindow, "Semi-Saturatable Reaction Wheels", GUILayout.Height(0));
         }
 
         void drawWindow(int id)
@@ -121,10 +117,10 @@ namespace SaturatableRW
 
             if (!rw.drawWheel)
                 return;            
-            GUILayout.Label("<b>Axis</b>\t\t<b>Available</b>\t<b>Max</b>");
-            GUILayout.Label(string.Format("{0}\t\t{1:0.0}kN\t\t{2:0.0}kN", "Pitch", rw.availablePitchTorque, rw.maxPitchTorque));
-            GUILayout.Label(string.Format("{0}\t\t{1:0.0}kN\t\t{2:0.0}kN", "Yaw", rw.availableYawTorque, rw.maxYawTorque));
-            GUILayout.Label(string.Format("{0}\t\t{1:0.0}kN\t\t{2:0.0}kN", "Roll", rw.availableRollTorque, rw.maxRollTorque));
+            GUILayout.Label("<b>Axis</b>\t<b>Available</b>\t<b>Max</b>");
+            GUILayout.Label(string.Format("{0}\t{1:0.0}kN\t{2:0.0}kN", "Pitch", rw.availablePitchTorque, rw.maxPitchTorque));
+            GUILayout.Label(string.Format("{0}\t{1:0.0}kN\t{2:0.0}kN", "Yaw", rw.availableYawTorque, rw.maxYawTorque));
+            GUILayout.Label(string.Format("{0}\t{1:0.0}kN\t{2:0.0}kN", "Roll", rw.availableRollTorque, rw.maxRollTorque));
         }
     }
 }
