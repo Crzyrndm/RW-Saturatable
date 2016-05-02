@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace SaturatableRW
 {
-    public class RWSaturatable : ModuleReactionWheel
+    public class RWSaturatable : ModuleReactionWheel, ITorqueProvider
     {
         /*//////////////////////////////////////////////////////////////////////////////
          * This is not and is never intended to be a realistic representation of how reaction wheels work. That would involve simulating
@@ -137,19 +137,14 @@ namespace SaturatableRW
         public override void OnAwake()
         {
             base.OnAwake();
-
             // Float curve initialisation
             if (torqueCurve == null)
                 torqueCurve = new FloatCurve();
             if (bleedRate == null)
                 bleedRate = new FloatCurve();
 
-            // I need a better way to make this module work at any time
-            if (HighLogic.LoadedSceneIsFlight)
-                this.part.force_activate();
-
             dischargeResources = new List<ResourceConsumer>();
-            dummyRCS = part.Modules.GetModules<MomentumDischargeThruster>().FirstOrDefault();
+            dummyRCS = part.Modules.GetModule<MomentumDischargeThruster>();
             if (dummyRCS != null)
             {
                 dischargeRate = dummyRCS.thrusterPower;
@@ -327,13 +322,20 @@ namespace SaturatableRW
                 double amount = rc.Rate * resourcePctToRequest * pctRequestable * TimeWarp.fixedDeltaTime;
                 momentFrac = (float)Math.Min(momentFrac, part.RequestResource(rc.ID, amount) / amount);
             }
-            x_Moment -= x_momentToRemove * (float)pctRequestable;
-            y_Moment -= y_momentToRemove * (float)pctRequestable;
-            z_Moment -= z_momentToRemove * (float)pctRequestable;
-            
-            lastRemovedMoment = new Vector3(x_momentToRemove * (float)pctRequestable, y_momentToRemove * (float)pctRequestable, z_momentToRemove * (float)pctRequestable);
+            x_Moment -= x_momentToRemove * momentFrac;
+            y_Moment -= y_momentToRemove * momentFrac;
+            z_Moment -= z_momentToRemove * momentFrac;
+
+            lastRemovedMoment = new Vector3(x_momentToRemove * momentFrac, y_momentToRemove * momentFrac, z_momentToRemove * momentFrac);
             if (dischargeTorque)
                 part.Rigidbody.AddTorque(vessel.ReferenceTransform.rotation * -lastRemovedMoment, ForceMode.Force);
+        }
+
+        public Vector3 GetPotentialTorque()
+        {
+            if (!bConsumeResource)
+                return base.GetPotentialTorque();
+            return Vector3.zero;
         }
 
         public List<PartResource> getConnectedResources(ResourceConsumer rc)
