@@ -86,9 +86,9 @@ namespace SaturatableRW
         /// <summary>
         /// Globally scale down output torque
         /// </summary>
-        [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Torque Throttle")]
-        [UI_FloatRange(minValue = 0, maxValue = 1, stepIncrement = 0.02f)]
+        [KSPField(isPersistant = true, guiActiveEditor = true, guiName = "Torque Throttle"), UI_FloatRange(minValue = 0, maxValue = 1, stepIncrement = 0.02f, scene = UI_Scene.Editor)]
         public float torqueThrottle = 1;
+
         /// <summary>
         /// When true, wheel will dump momentum at a fixed rate in exchange for a certain amount of a resource (eg. monopropellant)
         /// Toggle through the window (and sets false when it runs out of resources or stored momentum)
@@ -113,6 +113,11 @@ namespace SaturatableRW
         /// if false, resource consumption is disallowed
         /// </summary>
         public bool canForceDischarge = false;
+
+        /// <summary>
+        /// If true, resource discharge creates torque equivalent to the momentum discharged
+        /// </summary>
+        public bool dischargeTorque = false;
 
         /// <summary>
         /// The momentum to recover per second of discharge
@@ -222,38 +227,45 @@ namespace SaturatableRW
                 this.Fields["availableRollTorque"].guiActive = false;
                 this.Fields["availableYawTorque"].guiActive = false;
             }
+            if (config.GetValue("dischargeTorque", false))
+                dischargeTorque = true;
 
             // save the file so it can be activated by anyone
             config["LogDump"] = config.GetValue("LogDump", false);
             config["DefaultStateIsActive"] = config.GetValue("DefaultStateIsActive", true);
             config["DisplayCurrentTorque"] = config.GetValue("DisplayCurrentTorque", false);
+            config["dischargeTorque"] = config.GetValue("dischargeTorque", false);
             config.save();
         }
 
+        private string info;
         public override string GetInfo()
         {
-            saturationLimit = (this.PitchTorque + this.YawTorque + this.RollTorque) * saturationScale / 3;
-            
-            // Base info
-            string info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms",
-                                        PitchTorque, YawTorque, RollTorque, saturationLimit);
-            
-            // display min/max bleed rate if there is a difference, otherwise just one value
-            float min, max;
-            bleedRate.FindMinMaxValue(out min, out max);
-            if (min == max)
-                info += string.Format("\r\n<b>Bleed Rate:</b> {0:F1}%", max * 100);
-            else
-                info += string.Format("\r\n<b>Bleed Rate:\r\n\tMin:</b> {0:0.#%}\r\n\t<b>Max:</b> {1:0.#%}", min, max);
-            
-            // resource consumption
-            info += "\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>";
-            foreach (ModuleResource res in this.inputResources)
+            if (string.IsNullOrEmpty(info))
             {
-                if (res.rate <= 1)
-                    info += string.Format("\r\n - <b>{0}:</b> {1:F1} /min", res.name, res.rate * 60);
+                saturationLimit = (this.PitchTorque + this.YawTorque + this.RollTorque) * saturationScale / 3;
+
+                // Base info
+                info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms",
+                                            PitchTorque, YawTorque, RollTorque, saturationLimit);
+
+                // display min/max bleed rate if there is a difference, otherwise just one value
+                float min, max;
+                bleedRate.FindMinMaxValue(out min, out max);
+                if (min == max)
+                    info += string.Format("\r\n<b>Bleed Rate:</b> {0:F1}%", max * 100);
                 else
-                    info += string.Format("\r\n - <b>{0}:</b> {1:F1} /s", res.name, res.rate);
+                    info += string.Format("\r\n<b>Bleed Rate:\r\n\tMin:</b> {0:0.#%}\r\n\t<b>Max:</b> {1:0.#%}", min, max);
+
+                // resource consumption
+                info += "\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>";
+                foreach (ModuleResource res in this.inputResources)
+                {
+                    if (res.rate <= 1)
+                        info += string.Format("\r\n - <b>{0}:</b> {1:F1} /min", res.name, res.rate * 60);
+                    else
+                        info += string.Format("\r\n - <b>{0}:</b> {1:F1} /s", res.name, res.rate);
+                }
             }
             return info;
         }
@@ -274,6 +286,7 @@ namespace SaturatableRW
             updateTorque();
         }
 
+        Vector3 lastRemovedMoment;
         private void useResourcesToRecover()
         {
             if (!bConsumeResource || !canForceDischarge)
@@ -284,26 +297,43 @@ namespace SaturatableRW
             float y_momentToRemove = Mathf.Clamp(y_Moment, -momentumToRemove, momentumToRemove);
             float z_momentToRemove = Mathf.Clamp(z_Moment, -momentumToRemove, momentumToRemove);
             double resourcePctToRequest = (Math.Abs(x_momentToRemove) + Math.Abs(y_momentToRemove) + Math.Abs(z_momentToRemove)) / (3 * momentumToRemove); // reduce the resource consumption if less is removed
-            double pctRequestable = 1;
-            foreach (ResourceConsumer rc in dischargeResources)
+            if (resourcePctToRequest < 0.01)
             {
-                double total = getConnectedResources(rc).Sum(r => r.amount);
-                double requestedAmount = rc.Rate * resourcePctToRequest * TimeWarp.fixedDeltaTime;
-                pctRequestable = Math.Min(total / requestedAmount, pctRequestable);
-            }
-            if (pctRequestable < 0.01 || resourcePctToRequest < 0.01)
                 bConsumeResource = false;
-            else
+                return;
+            }
+
+            // I'm looping through like this because I need to know the minimum pct available across all the resources to be consumed otherwise the last one might run low and cause uneven draw
+            // if only one resource specified lets just not do this extra resource check...
+            double pctRequestable = 1;
+            if (dischargeResources.Count > 1)
             {
                 foreach (ResourceConsumer rc in dischargeResources)
                 {
-                    double amount = rc.Rate * resourcePctToRequest * pctRequestable * TimeWarp.fixedDeltaTime;
-                    part.RequestResource(rc.ID, amount);
+                    double total = getConnectedResources(rc).Sum(r => r.amount);
+                    double requestedAmount = rc.Rate * resourcePctToRequest * TimeWarp.fixedDeltaTime;
+                    pctRequestable = Math.Min(total / requestedAmount, pctRequestable);
                 }
-                x_Moment -= x_momentToRemove;
-                y_Moment -= y_momentToRemove;
-                z_Moment -= z_momentToRemove;
             }
+            if (pctRequestable < 0.01)
+            {
+                bConsumeResource = false;
+                return;
+            }
+
+            float momentFrac = (float)pctRequestable;
+            foreach (ResourceConsumer rc in dischargeResources)
+            {
+                double amount = rc.Rate * resourcePctToRequest * pctRequestable * TimeWarp.fixedDeltaTime;
+                momentFrac = (float)Math.Min(momentFrac, part.RequestResource(rc.ID, amount) / amount);
+            }
+            x_Moment -= x_momentToRemove * (float)pctRequestable;
+            y_Moment -= y_momentToRemove * (float)pctRequestable;
+            z_Moment -= z_momentToRemove * (float)pctRequestable;
+            
+            lastRemovedMoment = new Vector3(x_momentToRemove * (float)pctRequestable, y_momentToRemove * (float)pctRequestable, z_momentToRemove * (float)pctRequestable);
+            if (dischargeTorque)
+                part.Rigidbody.AddTorque(vessel.ReferenceTransform.rotation * -lastRemovedMoment, ForceMode.Force);
         }
 
         public List<PartResource> getConnectedResources(ResourceConsumer rc)
