@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace SaturatableRW
 {
-    public class RWSaturatable : ModuleReactionWheel, ITorqueProvider
+    public class RWSaturatable : PartModule
     {
         /*//////////////////////////////////////////////////////////////////////////////
          * This is not and is never intended to be a realistic representation of how reaction wheels work. That would involve simulating
@@ -18,6 +18,8 @@ namespace SaturatableRW
          * a reasonable approximation of RW effects on control input but there are very noticeable inconsistencies with a realistic
          * system.
         /*///////////////////////////////////////////////////////////////////////////////
+
+        internal ModuleReactionWheel wheelRef;
 
         /// <summary>
         /// Storable axis momentum = average axis torque * saturationScale
@@ -74,13 +76,11 @@ namespace SaturatableRW
         /// <summary>
         /// Torque available dependent on % saturation
         /// </summary>
-        [KSPField]
         public FloatCurve torqueCurve;
 
         /// <summary>
         /// Percentage of momentum to decay every second based on % saturation
         /// </summary>
-        [KSPField]
         public FloatCurve bleedRate;
 
         /// <summary>
@@ -134,14 +134,36 @@ namespace SaturatableRW
             Window.Instance.showWindow = !Window.Instance.showWindow;
         }
 
-        public override void OnAwake()
+        public void OnDestroy()
         {
-            base.OnAwake();
+            if (!HighLogic.LoadedSceneIsFlight || Window.Instance == null || Window.Instance.Vessels == null)
+                return;
+            try
+            {
+                if (Window.Instance.Vessels.ContainsKey(vessel.vesselName))
+                    Window.Instance.Vessels.Remove(vessel.vesselName);
+            }
+            catch //(Exception ex)
+            {
+                //Debug.Log(ex.StackTrace);
+            }
+        }
+
+        public void Start()
+        {
+            foreach (ConfigNode node in part.partInfo.partConfig.GetNodes("MODULE"))
+            {
+                if (node.GetValue("name") == "RWSaturatable")
+                {
+                    torqueCurve.Load(node.GetNode("torqueCurve"));
+                    bleedRate.Load(node.GetNode("bleedRate"));
+                    break;
+                }
+            }
+            
+            wheelRef = part.Modules.GetModule<ModuleReactionWheel>();
+
             // Float curve initialisation
-            if (torqueCurve == null)
-                torqueCurve = new FloatCurve();
-            if (bleedRate == null)
-                bleedRate = new FloatCurve();
 
             dischargeResources = new List<ResourceConsumer>();
             dummyRCS = part.Modules.GetModule<MomentumDischargeThruster>();
@@ -160,34 +182,15 @@ namespace SaturatableRW
                 if (dischargeResources.Any(rc => rc.Rate > 0))
                     canForceDischarge = true;
             }
-        }
 
-        public void OnDestroy()
-        {
-            if (!HighLogic.LoadedSceneIsFlight || Window.Instance == null || Window.Instance.Vessels == null)
-                return;
-            try
-            {
-                if (Window.Instance.Vessels.ContainsKey(vessel.vesselName))
-                    Window.Instance.Vessels.Remove(vessel.vesselName);
-            }
-            catch //(Exception ex)
-            {
-                //Debug.Log(ex.StackTrace);
-            }
-        }
+            maxRollTorque = wheelRef.RollTorque;
+            maxPitchTorque = wheelRef.PitchTorque;
+            maxYawTorque = wheelRef.YawTorque;
 
-        public override void OnStart(StartState state)
-        {
-            base.OnStart(state);
+            saturationLimit = (maxPitchTorque + maxYawTorque + maxRollTorque) * saturationScale / 3;
             if (HighLogic.LoadedSceneIsFlight)
             {
                 // remember reference torque values
-                maxRollTorque = this.RollTorque;
-                maxPitchTorque = this.PitchTorque;
-                maxYawTorque = this.YawTorque;
-
-                saturationLimit = (this.PitchTorque + this.YawTorque + this.RollTorque) * saturationScale / 3;
 
                 LoadConfig();
                                 
@@ -201,7 +204,7 @@ namespace SaturatableRW
                 yield return null;
             
             if (!Window.Instance.Vessels.ContainsKey(vessel.vesselName))
-                Window.Instance.Vessels.Add(vessel.vesselName, new VesselInfo(vessel, this.State == WheelState.Active));
+                Window.Instance.Vessels.Add(vessel.vesselName, new VesselInfo(vessel, wheelRef.State == ModuleReactionWheel.WheelState.Active));
 
             Window.Instance.Vessels[vessel.vesselName].wheels.Add(this);
         }
@@ -212,10 +215,8 @@ namespace SaturatableRW
                 config = KSP.IO.PluginConfiguration.CreateForType<RWSaturatable>();
             config.load();
 
-            if (config.GetValue("LogDump", false))
-                StartCoroutine(loggingRoutine());
             if (!config.GetValue("DefaultStateIsActive", true) && vessel.atmDensity > 0.001)
-                this.State = ModuleReactionWheel.WheelState.Disabled;
+                wheelRef.State = ModuleReactionWheel.WheelState.Disabled;
             if (!config.GetValue("DisplayCurrentTorque", false))
             {
                 this.Fields["availablePitchTorque"].guiActive = false;
@@ -226,23 +227,22 @@ namespace SaturatableRW
                 dischargeTorque = true;
 
             // save the file so it can be activated by anyone
-            config["LogDump"] = config.GetValue("LogDump", false);
             config["DefaultStateIsActive"] = config.GetValue("DefaultStateIsActive", true);
             config["DisplayCurrentTorque"] = config.GetValue("DisplayCurrentTorque", false);
             config["dischargeTorque"] = config.GetValue("dischargeTorque", false);
             config.save();
         }
 
-        private string info;
+        private string info = string.Empty;
         public override string GetInfo()
         {
-            if (string.IsNullOrEmpty(info))
+            if (HighLogic.LoadedSceneIsEditor && string.IsNullOrEmpty(info))
             {
-                saturationLimit = (this.PitchTorque + this.YawTorque + this.RollTorque) * saturationScale / 3;
+                saturationLimit = (wheelRef.PitchTorque + wheelRef.YawTorque + wheelRef.RollTorque) * saturationScale / 3;
 
                 // Base info
                 info = string.Format("<b>Pitch Torque:</b> {0:F1} kNm\r\n<b>Yaw Torque:</b> {1:F1} kNm\r\n<b>Roll Torque:</b> {2:F1} kNm\r\n\r\n<b>Capacity:</b> {3:F1} kNms",
-                                            PitchTorque, YawTorque, RollTorque, saturationLimit);
+                                            wheelRef.PitchTorque, wheelRef.YawTorque, wheelRef.RollTorque, saturationLimit);
 
                 // display min/max bleed rate if there is a difference, otherwise just one value
                 float min, max;
@@ -254,7 +254,7 @@ namespace SaturatableRW
 
                 // resource consumption
                 info += "\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>";
-                foreach (ModuleResource res in this.inputResources)
+                foreach (ModuleResource res in wheelRef.inputResources)
                 {
                     if (res.rate <= 1)
                         info += string.Format("\r\n - <b>{0}:</b> {1:F1} /min", res.name, res.rate * 60);
@@ -265,13 +265,10 @@ namespace SaturatableRW
             return info;
         }
 
-        public override void OnFixedUpdate()
+        public void FixedUpdate()
         {
-            base.OnFixedUpdate();
-
-            if (!HighLogic.LoadedSceneIsFlight || !FlightGlobals.ready)
+            if (!(HighLogic.LoadedSceneIsFlight && FlightGlobals.ready))
                 return;
-            
             useResourcesToRecover();
 
             // update stored momentum
@@ -331,13 +328,6 @@ namespace SaturatableRW
                 part.Rigidbody.AddTorque(vessel.ReferenceTransform.rotation * -lastRemovedMoment, ForceMode.Force);
         }
 
-        public Vector3 GetPotentialTorque()
-        {
-            if (!bConsumeResource)
-                return base.GetPotentialTorque();
-            return Vector3.zero;
-        }
-
         public List<PartResource> getConnectedResources(ResourceConsumer rc)
         {
             List<PartResource> connectedResources = new List<PartResource>();
@@ -347,7 +337,7 @@ namespace SaturatableRW
 
         private void updateMomentum()
         {
-            if (this.State == WheelState.Active && !bConsumeResource)
+            if (wheelRef.State == ModuleReactionWheel.WheelState.Active && !bConsumeResource)
             {
                 // input torque scale. Available torque gives exponential decay and will always have some torque available (should asymptotically approach bleed rate)
                 float rollInput = TimeWarp.fixedDeltaTime * this.vessel.ctrlState.roll * availableRollTorque;
@@ -376,15 +366,15 @@ namespace SaturatableRW
 
             // Roll
             availableRollTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.up, maxRollTorque)) * torqueThrottle;
-            this.RollTorque = bConsumeResource ? 0 : availableRollTorque;
+            wheelRef.RollTorque = availableRollTorque;
 
             // Pitch
             availablePitchTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.right, maxPitchTorque)) * torqueThrottle;
-            this.PitchTorque = bConsumeResource ? 0 : availablePitchTorque;
+            wheelRef.PitchTorque = bConsumeResource ? 0 : availablePitchTorque;
 
             // Yaw
             availableYawTorque = Math.Abs(calcAvailableTorque(this.vessel.transform.forward, maxYawTorque)) * torqueThrottle;
-            this.YawTorque = bConsumeResource ? 0 : availableYawTorque;
+            wheelRef.YawTorque = bConsumeResource ? 0 : availableYawTorque;
         }
 
         /// <summary>
@@ -445,21 +435,6 @@ namespace SaturatableRW
                 return Mathf.Abs(current) / limit;
             else
                 return 0;
-        }
-
-        /// <summary>
-        /// runs once per second while in the flight scene if logging is active
-        /// </summary>
-        /// <returns></returns>
-        IEnumerator loggingRoutine()
-        {
-            while (HighLogic.LoadedSceneIsFlight)
-            {
-                yield return new WaitForSeconds(1);
-                Debug.Log(string.Format("Vessel Name: {0}\r\nPart Name: {1}\r\nSaturation Limit: {2}\r\nMomentume X: {3}\r\nMomentum Y: {4}\r\nMomentum Z: {5}\r\nMax Roll Torque: {6}\r\nMax Pitch Torque: {7}"
-                    + "\r\nMax Yaw Torque: {8}\r\nAvailable Roll Torque: {9}\r\nAvailable Pitch Torque: {10}\r\nAvailable Yaw Torque: {11}\r\nWheel State: {12}"
-                    ,this.vessel.vesselName, this.part.partInfo.title, saturationLimit, x_Moment, y_Moment, z_Moment, maxRollTorque, maxPitchTorque, maxYawTorque, availableRollTorque, availablePitchTorque, availableYawTorque, this.wheelState));
-            }
         }
     }
 }

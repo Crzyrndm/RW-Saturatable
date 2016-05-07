@@ -82,7 +82,7 @@ namespace SaturatableRW
                     ves.forcedActive = state;
                     ModuleReactionWheel.WheelState stateToSet = state ? ModuleReactionWheel.WheelState.Active : ModuleReactionWheel.WheelState.Disabled;
                     foreach (RWSaturatable rw in ves.wheels)
-                        rw.State = stateToSet;
+                        rw.wheelRef.State = stateToSet;
                 }
                 GUILayout.BeginHorizontal();
                 GUILayout.Space(20);
@@ -98,7 +98,7 @@ namespace SaturatableRW
         {
             GUILayout.BeginHorizontal();
             Color backgroundColour = GUI.backgroundColor;
-            if (rw.State == ModuleReactionWheel.WheelState.Active)
+            if (rw.wheelRef.State == ModuleReactionWheel.WheelState.Active)
                     GUI.backgroundColor = XKCDColors.Green;
             bool tmp = GUILayout.Toggle(rw.drawWheel, rw.part.partInfo.title, GUI.skin.button);
             GUI.backgroundColor = backgroundColour;
@@ -107,7 +107,7 @@ namespace SaturatableRW
                 if (Event.current.button == 0)
                     rw.drawWheel = tmp;
                 else if (Event.current.button == 1)
-                    rw.State = rw.State == ModuleReactionWheel.WheelState.Disabled ? ModuleReactionWheel.WheelState.Active : ModuleReactionWheel.WheelState.Disabled;
+                    rw.wheelRef.State = rw.wheelRef.State == ModuleReactionWheel.WheelState.Disabled ? ModuleReactionWheel.WheelState.Active : ModuleReactionWheel.WheelState.Disabled;
             }
             if (rw.canForceDischarge)
             {
