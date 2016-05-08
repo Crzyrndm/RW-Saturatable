@@ -165,23 +165,7 @@ namespace SaturatableRW
 
             // Float curve initialisation
 
-            dischargeResources = new List<ResourceConsumer>();
-            dummyRCS = part.Modules.GetModule<MomentumDischargeThruster>();
-            if (dummyRCS != null)
-            {
-                dischargeRate = dummyRCS.thrusterPower;
-                double ISP = dummyRCS.atmosphereCurve.Evaluate(0);
-                double totalPropellantMassRatio = dummyRCS.propellants.Sum(r => r.ratio * PartResourceLibrary.Instance.resourceDefinitions[r.id].density);
-                double totalMassRate = dummyRCS.thrusterPower * saturationLimit / (ISP * dummyRCS.G);
-                foreach (Propellant p in dummyRCS.propellants)
-                {
-                    PartResourceDefinition res = PartResourceLibrary.Instance.resourceDefinitions[p.id];
-                    double propellantRate = p.ratio * totalMassRate / totalPropellantMassRatio;
-                    dischargeResources.Add(new ResourceConsumer(res.id, propellantRate, res.resourceFlowMode));
-                }
-                if (dischargeResources.Any(rc => rc.Rate > 0))
-                    canForceDischarge = true;
-            }
+
 
             maxRollTorque = wheelRef.RollTorque;
             maxPitchTorque = wheelRef.PitchTorque;
@@ -200,6 +184,26 @@ namespace SaturatableRW
 
         IEnumerator registerWheel()
         {
+            yield return null;
+
+            dischargeResources = new List<ResourceConsumer>();
+            dummyRCS = part.Modules.GetModule<MomentumDischargeThruster>();
+            if (dummyRCS != null)
+            {
+                dischargeRate = dummyRCS.thrusterPower;
+                double ISP = dummyRCS.atmosphereCurve.Evaluate(0);
+                double totalPropellantMassRatio = dummyRCS.propellants.Sum(r => r.ratio * PartResourceLibrary.Instance.resourceDefinitions[r.id].density);
+                double totalMassRate = dummyRCS.thrusterPower * saturationLimit / (ISP * dummyRCS.G);
+                foreach (Propellant p in dummyRCS.propellants)
+                {
+                    PartResourceDefinition res = PartResourceLibrary.Instance.resourceDefinitions[p.id];
+                    double propellantRate = p.ratio * totalMassRate / totalPropellantMassRatio;
+                    dischargeResources.Add(new ResourceConsumer(res.id, propellantRate, res.resourceFlowMode));
+                }
+                if (dischargeResources.Any(rc => rc.Rate > 0))
+                    canForceDischarge = true;
+            }
+
             for (int i = 0; i < 10; i++)
                 yield return null;
             
