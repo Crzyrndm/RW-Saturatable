@@ -256,15 +256,15 @@ namespace SaturatableRW
                 else
                     info += string.Format("\r\n<b>Bleed Rate:\r\n\tMin:</b> {0:0.#%}\r\n\t<b>Max:</b> {1:0.#%}", min, max);
 
-                // resource consumption
-                info += "\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>";
-                foreach (ModuleResource res in wheelRef.inputResources)
-                {
-                    if (res.rate <= 1)
-                        info += string.Format("\r\n - <b>{0}:</b> {1:F1} /min", res.name, res.rate * 60);
-                    else
-                        info += string.Format("\r\n - <b>{0}:</b> {1:F1} /s", res.name, res.rate);
-                }
+                //// resource consumption
+                //info += "\r\n\r\n<b><color=#99ff00ff>Requires:</color></b>";
+                //foreach (ModuleResource res in wheelRef.GetConsumedResources())
+                //{
+                //    if (res.rate <= 1)
+                //        info += string.Format("\r\n - <b>{0}:</b> {1:F1} /min", res.name, res.rate * 60);
+                //    else
+                //        info += string.Format("\r\n - <b>{0}:</b> {1:F1} /s", res.name, res.rate);
+                //}
             }
             return info;
         }
@@ -273,7 +273,7 @@ namespace SaturatableRW
         {
             if (!(HighLogic.LoadedSceneIsFlight && FlightGlobals.ready))
                 return;
-            useResourcesToRecover();
+            //useResourcesToRecover();
 
             // update stored momentum
             updateMomentum();
@@ -282,62 +282,62 @@ namespace SaturatableRW
             updateTorque();
         }
 
-        Vector3 lastRemovedMoment;
-        private void useResourcesToRecover()
-        {
-            if (!bConsumeResource || !canForceDischarge)
-                return;
+        //Vector3 lastRemovedMoment;
+        //private void useResourcesToRecover()
+        //{
+        //    if (!bConsumeResource || !canForceDischarge)
+        //        return;
 
-            float momentumToRemove = TimeWarp.fixedDeltaTime * dischargeRate * saturationLimit;
-            float x_momentToRemove = Mathf.Clamp(x_Moment, -momentumToRemove, momentumToRemove);
-            float y_momentToRemove = Mathf.Clamp(y_Moment, -momentumToRemove, momentumToRemove);
-            float z_momentToRemove = Mathf.Clamp(z_Moment, -momentumToRemove, momentumToRemove);
-            double resourcePctToRequest = (Math.Abs(x_momentToRemove) + Math.Abs(y_momentToRemove) + Math.Abs(z_momentToRemove)) / (3 * momentumToRemove); // reduce the resource consumption if less is removed
-            if (resourcePctToRequest < 0.01)
-            {
-                bConsumeResource = false;
-                return;
-            }
+        //    float momentumToRemove = TimeWarp.fixedDeltaTime * dischargeRate * saturationLimit;
+        //    float x_momentToRemove = Mathf.Clamp(x_Moment, -momentumToRemove, momentumToRemove);
+        //    float y_momentToRemove = Mathf.Clamp(y_Moment, -momentumToRemove, momentumToRemove);
+        //    float z_momentToRemove = Mathf.Clamp(z_Moment, -momentumToRemove, momentumToRemove);
+        //    double resourcePctToRequest = (Math.Abs(x_momentToRemove) + Math.Abs(y_momentToRemove) + Math.Abs(z_momentToRemove)) / (3 * momentumToRemove); // reduce the resource consumption if less is removed
+        //    if (resourcePctToRequest < 0.01)
+        //    {
+        //        bConsumeResource = false;
+        //        return;
+        //    }
 
-            // I'm looping through like this because I need to know the minimum pct available across all the resources to be consumed otherwise the last one might run low and cause uneven draw
-            // if only one resource specified lets just not do this extra resource check...
-            double pctRequestable = 1;
-            if (dischargeResources.Count > 1)
-            {
-                foreach (ResourceConsumer rc in dischargeResources)
-                {
-                    double total = getConnectedResources(rc).Sum(r => r.amount);
-                    double requestedAmount = rc.Rate * resourcePctToRequest * TimeWarp.fixedDeltaTime;
-                    pctRequestable = Math.Min(total / requestedAmount, pctRequestable);
-                }
-            }
-            if (pctRequestable < 0.01)
-            {
-                bConsumeResource = false;
-                return;
-            }
+        //    // I'm looping through like this because I need to know the minimum pct available across all the resources to be consumed otherwise the last one might run low and cause uneven draw
+        //    // if only one resource specified lets just not do this extra resource check...
+        //    double pctRequestable = 1;
+        //    if (dischargeResources.Count > 1)
+        //    {
+        //        foreach (ResourceConsumer rc in dischargeResources)
+        //        {
+        //            double total = getConnectedResources(rc).Sum(r => r.amount);
+        //            double requestedAmount = rc.Rate * resourcePctToRequest * TimeWarp.fixedDeltaTime;
+        //            pctRequestable = Math.Min(total / requestedAmount, pctRequestable);
+        //        }
+        //    }
+        //    if (pctRequestable < 0.01)
+        //    {
+        //        bConsumeResource = false;
+        //        return;
+        //    }
 
-            float momentFrac = (float)pctRequestable;
-            foreach (ResourceConsumer rc in dischargeResources)
-            {
-                double amount = rc.Rate * resourcePctToRequest * pctRequestable * TimeWarp.fixedDeltaTime;
-                momentFrac = (float)Math.Min(momentFrac, part.RequestResource(rc.ID, amount) / amount);
-            }
-            x_Moment -= x_momentToRemove * momentFrac;
-            y_Moment -= y_momentToRemove * momentFrac;
-            z_Moment -= z_momentToRemove * momentFrac;
+        //    float momentFrac = (float)pctRequestable;
+        //    foreach (ResourceConsumer rc in dischargeResources)
+        //    {
+        //        double amount = rc.Rate * resourcePctToRequest * pctRequestable * TimeWarp.fixedDeltaTime;
+        //        momentFrac = (float)Math.Min(momentFrac, part.RequestResource(rc.ID, amount) / amount);
+        //    }
+        //    x_Moment -= x_momentToRemove * momentFrac;
+        //    y_Moment -= y_momentToRemove * momentFrac;
+        //    z_Moment -= z_momentToRemove * momentFrac;
 
-            lastRemovedMoment = new Vector3(x_momentToRemove * momentFrac, y_momentToRemove * momentFrac, z_momentToRemove * momentFrac);
-            if (dischargeTorque)
-                part.Rigidbody.AddTorque(vessel.ReferenceTransform.rotation * -lastRemovedMoment, ForceMode.Force);
-        }
+        //    lastRemovedMoment = new Vector3(x_momentToRemove * momentFrac, y_momentToRemove * momentFrac, z_momentToRemove * momentFrac);
+        //    if (dischargeTorque)
+        //        part.AddTorque(vessel.ReferenceTransform.rotation * -lastRemovedMoment);
+        //}
 
-        public List<PartResource> getConnectedResources(ResourceConsumer rc)
-        {
-            List<PartResource> connectedResources = new List<PartResource>();
-            part.GetConnectedResources(rc.ID, rc.FlowMode, connectedResources);
-            return connectedResources;
-        }
+        //public List<PartResource> getConnectedResources(ResourceConsumer rc)
+        //{
+        //    List<PartResource> connectedResources = new List<PartResource>();
+        //    part.GetConnectedResources(rc.ID, rc.FlowMode, connectedResources);
+        //    return connectedResources;
+        //}
 
         private void updateMomentum()
         {
