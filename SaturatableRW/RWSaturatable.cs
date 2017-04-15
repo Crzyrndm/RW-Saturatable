@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -12,7 +12,7 @@ namespace SaturatableRW
          * This is not and is never intended to be a realistic representation of how reaction wheels work. That would involve simulating
          * effects such as gyroscopic stabilisation and precession that are not dependent only on the internal state of the part and current
          * command inputs, but the rate of rotation of the vessel and would require applying forces without using the input system
-         * 
+         *
          * Instead, a reaction wheel is simulated as an arbitrary object in a fixed orientation in space. Momentum is
          * attributed to and decayed from these objects based on vessel alignment with their arbitrary axes. This system allows for
          * a reasonable approximation of RW effects on control input but there are very noticeable inconsistencies with a realistic
@@ -49,9 +49,10 @@ namespace SaturatableRW
         /// Maximum momentum storable on an axis
         /// </summary>
         public float saturationLimit;
-        
+
         // Storing module torque for reference since this module overrides the base values to take effect
         public float maxRollTorque;
+
         public float maxPitchTorque;
         public float maxYawTorque;
 
@@ -97,6 +98,7 @@ namespace SaturatableRW
 
         public List<ResourceConsumer> dischargeResources;
         public MomentumDischargeThruster dummyRCS;
+
         public class ResourceConsumer
         {
             public int ID { get; set; }
@@ -109,6 +111,7 @@ namespace SaturatableRW
                 FlowMode = flowMode;
             }
         }
+
         /// <summary>
         /// if false, resource consumption is disallowed
         /// </summary>
@@ -132,6 +135,12 @@ namespace SaturatableRW
         public void ToggleWindow()
         {
             Window.Instance.showWindow = !Window.Instance.showWindow;
+        }
+
+        [KSPAction(actionGroup = KSPActionGroup.None, advancedTweakable = true, guiName = "Toggle Discharge", isPersistent = true, requireFullControl = true)]
+        public void ToggleDischarge()
+        {
+            bConsumeResource = !bConsumeResource;
         }
 
         public void OnDestroy()
@@ -160,12 +169,10 @@ namespace SaturatableRW
                     break;
                 }
             }
-            
+
             wheelRef = part.Modules.GetModule<ModuleReactionWheel>();
 
             // Float curve initialisation
-
-
 
             maxRollTorque = wheelRef.RollTorque;
             maxPitchTorque = wheelRef.PitchTorque;
@@ -177,12 +184,12 @@ namespace SaturatableRW
                 // remember reference torque values
 
                 LoadConfig();
-                                
+
                 StartCoroutine(registerWheel());
             }
         }
 
-        IEnumerator registerWheel()
+        private IEnumerator registerWheel()
         {
             yield return null;
 
@@ -206,7 +213,7 @@ namespace SaturatableRW
 
             for (int i = 0; i < 10; i++)
                 yield return null;
-            
+
             if (!Window.Instance.Vessels.ContainsKey(vessel.vesselName))
                 Window.Instance.Vessels.Add(vessel.vesselName, new VesselInfo(vessel, wheelRef.State == ModuleReactionWheel.WheelState.Active));
 
@@ -282,7 +289,7 @@ namespace SaturatableRW
             updateTorque();
         }
 
-        Vector3 lastRemovedMoment;
+        private Vector3 lastRemovedMoment;
         private void useResourcesToRecover()
         {
             if (!bConsumeResource || !canForceDischarge)
@@ -411,7 +418,7 @@ namespace SaturatableRW
         private float calcAvailableTorque(Vector3 refAxis, float maxAxisTorque)
         {
             Vector3 torqueVec = new Vector3(Vector3.Dot(refAxis, Planetarium.forward), Vector3.Dot(refAxis, Planetarium.up), Vector3.Dot(refAxis, Planetarium.right));
-            
+
             // Smallest ratio is the scaling factor so set them huge as a default
             float ratiox = 1000000, ratioy = 1000000, ratioz = 1000000;
             if (torqueVec.x != 0)
